@@ -1,0 +1,44 @@
+# 数据文件 (太大，不上传Git)
+tax_data/*.csv
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# 虚拟环境
+venv/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 输出文件
+output/figures/*.html
+output/figures/*.png
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 临时文件
+~$*
+*.tmp
+
+# Claude
+.claude/
+
+# 敏感配置 (如需要可取消注释)
+# src/config.py
