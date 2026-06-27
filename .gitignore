@@ -18,6 +18,7 @@ build/
 venv/
 env/
 .venv/
+.venv_py38/
 
 # IDE
 .vscode/
