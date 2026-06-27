@@ -93,7 +93,7 @@
             renderChart(window.NetFlowChart, 'chart-netflow', d, '净流入/流出');
         });
         API.get('/api/od-flows').then(function(d) {
-            renderChart(window.ODSankeyChart, 'chart-sankey', d, 'OD流向');
+            renderChart(window.ODLinesChart, 'chart-odlines', d, '深圳OD流向');
         });
     }
 

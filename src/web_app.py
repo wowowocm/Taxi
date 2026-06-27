@@ -210,8 +210,12 @@ def _get_vehicle_data():
 
 def _get_od_flow_data():
     """
-    OD流向桑基图数据（NEW）
-    将 top_od_pairs 格式化为 ECharts Sankey 的 nodes + links
+    OD流向数据 — 供 **深圳地图OD流向图** 使用
+    使用 ECharts graph + geo 系列（参考 project_info/rule.md 地理坐标图）。
+
+    返回:
+      nodes: [{name, value: [lng, lat]}, ...]   # graph data 格式
+      edges: [{source: name, target: name}, ...]  # graph edges 格式
     """
     sa = spatial_analyzer
     if sa.grid_od_matrix is None:
@@ -219,25 +223,53 @@ def _get_od_flow_data():
 
     top_pairs = sa.top_od_pairs(30)
 
-    # 收集唯一网格节点
-    node_set = set()
-    pairs = []
+    # 收集原始 OD 对
+    node_coords = {}
+    raw_pairs = []
     for _, row in top_pairs.iterrows():
-        o_name = f"({row['O_lng']:.3f},{row['O_lat']:.3f})"
-        d_name = f"({row['D_lng']:.3f},{row['D_lat']:.3f})"
-        node_set.add(o_name)
-        node_set.add(d_name)
-        pairs.append({
+        o_lng, o_lat = round(float(row["O_lng"]), 5), round(float(row["O_lat"]), 5)
+        d_lng, d_lat = round(float(row["D_lng"]), 5), round(float(row["D_lat"]), 5)
+        o_name = f"({o_lng},{o_lat})"
+        d_name = f"({d_lng},{d_lat})"
+        node_coords[o_name] = [o_lng, o_lat]
+        node_coords[d_name] = [d_lng, d_lat]
+        raw_pairs.append({
             "source": o_name,
             "target": d_name,
             "value": int(row["flow"]),
         })
 
-    nodes = [{"name": n} for n in sorted(node_set)]
+    # 合并双向流 (A→B vs B→A)，保留净值方向
+    pair_map = {}
+    for p in raw_pairs:
+        key = (p["source"], p["target"])
+        rev_key = (p["target"], p["source"])
+        if rev_key in pair_map:
+            rev = pair_map.pop(rev_key)
+            net = p["value"] - rev["value"]
+            if net > 0:
+                pair_map[key] = {"source": p["source"], "target": p["target"], "value": net}
+            elif net < 0:
+                pair_map[rev_key] = {"source": rev["source"], "target": rev["target"], "value": -net}
+        else:
+            pair_map[key] = p
+
+    clean_pairs = list(pair_map.values())
+
+    # 构建节点列表 — graph series data 格式: {name, value: [lng, lat]}
+    used = set()
+    for p in clean_pairs:
+        used.add(p["source"])
+        used.add(p["target"])
+
+    nodes = [{"name": n, "value": node_coords[n]} for n in sorted(used)]
+
+    # 构建边列表 — graph series edges 格式: {source: name, target: name}
+    edges = [{"source": p["source"], "target": p["target"]} for p in clean_pairs]
 
     return {
         "nodes": nodes,
-        "links": pairs,
+        "edges": edges,
     }
 
 

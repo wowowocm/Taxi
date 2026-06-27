@@ -48,10 +48,10 @@
         <div class="chart" id="chart-netflow"></div>
     </div>
 
-    <!-- 行5: OD桑基图全宽 NEW -->
+    <!-- 行5: 深圳地图OD流向图 全宽 NEW -->
     <div class="chart-card chart-full">
-        <h3>🌐 OD出行流向桑基图（Top-30 OD对）</h3>
-        <div class="chart" id="chart-sankey"></div>
+        <h3>🗺 深圳出租车OD出行流向图（Top-30 OD对）</h3>
+        <div class="chart" id="chart-odlines"></div>
     </div>
 </div>
 {% endblock %}
@@ -67,6 +67,6 @@
 <script src="{{ url_for('static', filename='js/charts/speed.js') }}"></script>
 <script src="{{ url_for('static', filename='js/charts/efficiency.js') }}"></script>
 <script src="{{ url_for('static', filename='js/charts/net-flow.js') }}"></script>
-<script src="{{ url_for('static', filename='js/charts/od-sankey.js') }}"></script>
+<script src="{{ url_for('static', filename='js/charts/od-lines.js') }}"></script>
 <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 {% endblock %}

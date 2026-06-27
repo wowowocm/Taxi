@@ -15,7 +15,58 @@ import argparse
 import traceback
 
 # 添加项目路径
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _PROJECT_DIR)
+
+
+def _find_venv_python():
+    """
+    自动检测可用的虚拟环境 Python 解释器。
+    优先查找 .venv_py38 (Python 3.8.10)，其次 .venv。
+    返回 (python_exe_path, venv_name) 或 (None, None)。
+    """
+    candidates = [
+        (".venv_py38", "Python 3.8.10"),
+        (".venv", "Python 3.12"),
+    ]
+    for venv_name, label in candidates:
+        if os.name == "nt":
+            exe = os.path.join(_PROJECT_DIR, venv_name, "Scripts", "python.exe")
+        else:
+            exe = os.path.join(_PROJECT_DIR, venv_name, "bin", "python")
+        if os.path.isfile(exe):
+            return exe, venv_name
+    return None, None
+
+
+def _relaunch_with_venv():
+    """
+    如果当前 Python 缺少 Flask，自动查找并使用项目虚拟环境重新启动。
+    """
+    venv_exe, venv_name = _find_venv_python()
+    if venv_exe is None:
+        return False
+
+    # 检查 venv 中是否有 Flask
+    import subprocess
+    try:
+        result = subprocess.run(
+            [venv_exe, "-c", "import flask"],
+            capture_output=True, timeout=10
+        )
+        if result.returncode != 0:
+            return False
+    except Exception:
+        return False
+
+    # 重新以 venv Python 执行当前脚本，传递相同参数
+    print(f"[INFO] 检测到虚拟环境: {venv_name}")
+    print(f"[INFO] 重新启动: {venv_exe} {' '.join(sys.argv)}")
+    print()
+    sys.stdout.flush()
+    # 使用 subprocess.call 替代 os.execv (Windows 兼容性更好)
+    sys.exit(subprocess.call([venv_exe] + sys.argv))
+    return True  # 不会执行到这里
 
 from src.config import RAW_DATA_PATH, CLEANED_DATA_PATH, FIGURES_DIR, REPORTS_DIR, LOG_DIR
 from src.logger import setup_logger, get_logger
@@ -213,6 +264,17 @@ def generate_report(temporal, spatial, efficiency):
 
 def run_web():
     """启动Web看板"""
+    # 检查 Flask 是否可用，不可用则尝试自动切换到项目 venv
+    try:
+        import flask  # noqa: F401
+    except ImportError:
+        if not _relaunch_with_venv():
+            print("[ERROR] Flask 未安装! 请激活虚拟环境后重试:")
+            print("  .venv_py38\\Scripts\\activate")
+            print("  python main.py --web")
+            sys.exit(1)
+        return  # _relaunch_with_venv 成功后不会返回
+
     from src.web_app import app, FLASK_HOST, FLASK_PORT, FLASK_DEBUG
     from src.web_app import init_data
 

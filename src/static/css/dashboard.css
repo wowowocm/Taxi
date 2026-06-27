@@ -92,12 +92,12 @@ body {
     height: 380px;
 }
 
-/* Full-width chart (e.g. Sankey) */
+/* Full-width chart (e.g. Map) */
 .chart-full {
     grid-column: 1 / -1;
 }
 .chart-full .chart {
-    height: 500px;
+    height: 650px;
 }
 
 /* --- Loading & Error States --- */

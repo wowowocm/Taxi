@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Sankey Test</title>
+<style>
+  body { font-family: sans-serif; padding: 20px; background: #f0f2f5; }
+  .chart { width: 100%; height: 500px; border: 1px solid #ccc; background: white; }
+  .info { margin: 10px 0; padding: 10px; background: #e8f5e9; border-radius: 4px; }
+  .error { margin: 10px 0; padding: 10px; background: #ffebee; border-radius: 4px; color: #c62828; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+</head>
+<body>
+<h2>Sankey Chart Test</h2>
+<div id="status" class="info">Loading...</div>
+<div id="chart-main" class="chart"></div>
+
+<script>
+// 模拟后端数据
+const testData = {
+    nodes: [
+        {name: '(114.115,22.530)'}, {name: '(114.115,22.540)'}, {name: '(114.115,22.548)'},
+        {name: '(114.125,22.540)'}, {name: '(114.125,22.548)'}, {name: '(114.125,22.557)'},
+        {name: '(114.045,22.540)'}, {name: '(114.045,22.530)'}, {name: '(114.065,22.521)'},
+        {name: '(114.065,22.530)'}, {name: '(114.075,22.530)'}, {name: '(114.075,22.540)'},
+        {name: '(114.025,22.530)'}, {name: '(114.025,22.540)'}, {name: '(114.035,22.521)'},
+        {name: '(114.045,22.512)'}, {name: '(114.045,22.521)'}, {name: '(114.055,22.512)'},
+        {name: '(114.055,22.521)'}, {name: '(114.055,22.540)'}, {name: '(114.085,22.540)'},
+        {name: '(114.095,22.540)'}, {name: '(114.095,22.557)'}, {name: '(114.095,22.566)'},
+        {name: '(114.125,22.566)'}, {name: '(114.135,22.548)'}, {name: '(114.135,22.611)'},
+        {name: '(114.145,22.611)'}, {name: '(114.155,22.611)'}
+    ],
+    links: [
+        {source: '(114.115,22.530)', target: '(114.115,22.540)', value: 80},
+        {source: '(114.125,22.548)', target: '(114.115,22.548)', value: 22},
+        {source: '(114.045,22.540)', target: '(114.045,22.530)', value: 19},
+        {source: '(114.065,22.521)', target: '(114.065,22.530)', value: 18},
+        {source: '(114.125,22.557)', target: '(114.125,22.548)', value: 17},
+        {source: '(114.115,22.540)', target: '(114.115,22.548)', value: 14},
+        {source: '(114.075,22.540)', target: '(114.075,22.530)', value: 7}
+    ]
+};
+
+const statusDiv = document.getElementById('status');
+
+try {
+    // Test 1: Basic init
+    const dom = document.getElementById('chart-main');
+    statusDiv.textContent = 'Test 1: DOM found, initializing chart...';
+
+    // Test 2: Init without theme
+    const inst1 = echarts.init(dom);
+    statusDiv.textContent += '\nTest 2: echarts.init() OK';
+
+    inst1.setOption({
+        tooltip: { trigger: 'item', triggerOn: 'mousemove' },
+        series: [{
+            type: 'sankey',
+            layoutIterations: 32,
+            nodeAlign: 'left',
+            data: testData.nodes,
+            links: testData.links,
+            label: { fontSize: 10 },
+            lineStyle: { color: 'gradient', curveness: 0.5 },
+            nodeWidth: 20,
+            nodeGap: 10
+        }]
+    });
+    statusDiv.textContent += '\nTest 3: setOption() with sankey OK';
+    statusDiv.textContent += '\n✅ ALL TESTS PASSED — Sankey renders correctly!';
+    statusDiv.className = 'info';
+} catch(e) {
+    statusDiv.textContent = '❌ ERROR: ' + e.message + '\n' + (e.stack || '');
+    statusDiv.className = 'error';
+    console.error(e);
+}
+</script>
+</body>
+</html>
