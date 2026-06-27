@@ -1,248 +1,78 @@
 # -*- coding: utf-8 -*-
 """
-Flask Web应用
-提供交互式数据看板 (前后端分离架构)
-后端API + 前端ECharts图表
+Flask Web应用 — 交互式数据看板
+架构: Jinja2模板 + 静态文件 + 10个细粒度API + 1个聚合API
 
-部署到CentOS VM时运行此文件
+部署到CentOS VM时运行: python main.py --web
 """
 
 import os
 import sys
+import numpy as np
+import pandas as pd
 
 # 添加项目根目录
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from flask import Flask, jsonify, render_template_string
+from flask import Flask, jsonify, render_template
 from src.config import FLASK_HOST, FLASK_PORT, FLASK_DEBUG
 from src.data_loader import DataLoader
 from src.temporal_analysis import TemporalAnalyzer
 from src.spatial_analysis import SpatialAnalyzer
+from src.logger import get_logger
 
-app = Flask(__name__)
+# Flask app — 静态文件和模板目录指向 src/ 下
+app = Flask(__name__,
+            static_folder='static',
+            static_url_path='/static',
+            template_folder='templates')
+
+log = get_logger()
 
 # 全局分析器实例（启动时初始化）
 loader = DataLoader()
 temporal_analyzer = None
 spatial_analyzer = None
 
-# ----------------------------------------------------------
-# HTML模板
-# ----------------------------------------------------------
-DASHBOARD_HTML = r"""
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>城市出行数据分析看板</title>
-    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: "Microsoft YaHei", sans-serif; background: #f0f2f5; }
-        .header { background: linear-gradient(135deg, #1a237e, #283593);
-                  color: white; padding: 20px 30px; text-align: center; }
-        .header h1 { font-size: 28px; }
-        .header p { opacity: 0.8; margin-top: 5px; }
-        .kpi-row { display: flex; gap: 15px; padding: 20px; flex-wrap: wrap;
-                   justify-content: center; }
-        .kpi-card { background: white; border-radius: 10px; padding: 20px 25px;
-                    box-shadow: 0 2px 8px rgba(0,0,0,0.08); text-align: center;
-                    min-width: 160px; flex: 1; max-width: 220px; }
-        .kpi-value { font-size: 30px; font-weight: bold; color: #1a237e; }
-        .kpi-label { font-size: 13px; color: #888; margin-top: 5px; }
-        .charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
-                       gap: 20px; padding: 0 20px 20px; }
-        .chart-card { background: white; border-radius: 10px; padding: 15px;
-                      box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
-        .chart-card h3 { color: #333; margin-bottom: 10px; font-size: 16px; }
-        .chart { width: 100%; height: 380px; }
-        .chart-full { grid-column: 1 / -1; }
-        .chart-full .chart { height: 450px; }
-        .footer { text-align: center; padding: 20px; color: #aaa; font-size: 12px; }
-        .loading { text-align: center; padding: 50px; color: #888; }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>🚕 深圳市出租车出行行为分析系统</h1>
-        <p>基于GPS轨迹数据的城市出行规律挖掘 | 500辆出租车 × 全天候轨迹</p>
-    </div>
 
-    <div class="kpi-row" id="kpi-cards">
-        <div class="loading">正在加载KPI数据...</div>
-    </div>
-
-    <div class="charts-grid">
-        <div class="chart-card">
-            <h3>24小时出行量分布</h3>
-            <div class="chart" id="chart-hourly"></div>
-        </div>
-        <div class="chart-card">
-            <h3>行程时长分布</h3>
-            <div class="chart" id="chart-duration"></div>
-        </div>
-        <div class="chart-card">
-            <h3>各时段出行量对比</h3>
-            <div class="chart" id="chart-period"></div>
-        </div>
-        <div class="chart-card">
-            <h3>Top-15 热点区域</h3>
-            <div class="chart" id="chart-hotspots"></div>
-        </div>
-    </div>
-
-    <div class="footer">
-        © 2026 城市出行数据分析项目组 | Python + Flask + ECharts
-    </div>
-
-    <script>
-        // 工具函数：加载数据并渲染
-        async function loadData() {
-            try {
-                const resp = await fetch('/api/dashboard');
-                const data = await resp.json();
-                renderKPIs(data.kpis);
-                renderHourlyChart(data.hourly);
-                renderDurationChart(data.duration);
-                renderPeriodChart(data.period);
-                renderHotspotChart(data.hotspots);
-            } catch (e) {
-                console.error('数据加载失败:', e);
-            }
-        }
-
-        // KPI卡片
-        function renderKPIs(kpis) {
-            const container = document.getElementById('kpi-cards');
-            container.innerHTML = kpis.map(k =>
-                `<div class="kpi-card">
-                    <div class="kpi-value">${k.value}</div>
-                    <div class="kpi-label">${k.label}</div>
-                </div>`
-            ).join('');
-        }
-
-        // 24小时出行量折线图
-        function renderHourlyChart(data) {
-            const chart = echarts.init(document.getElementById('chart-hourly'));
-            chart.setOption({
-                tooltip: { trigger: 'axis' },
-                xAxis: { type: 'category', data: data.hours, name: '小时' },
-                yAxis: { type: 'value', name: '出行量 (次)' },
-                series: [{
-                    data: data.values, type: 'line', smooth: true,
-                    areaStyle: { color: 'rgba(33,150,243,0.15)' },
-                    lineStyle: { color: '#2196F3', width: 2 },
-                    itemStyle: { color: '#2196F3' },
-                    markLine: {
-                        data: [{ type: 'average', name: '均值' }],
-                        lineStyle: { color: '#FF5722', type: 'dashed' }
-                    }
-                }]
-            });
-        }
-
-        // 行程时长分布柱状图
-        function renderDurationChart(data) {
-            const chart = echarts.init(document.getElementById('chart-duration'));
-            chart.setOption({
-                tooltip: { trigger: 'axis' },
-                xAxis: { type: 'category', data: data.labels, axisLabel: { rotate: 30 } },
-                yAxis: { type: 'value', name: '行程数 (次)' },
-                series: [{
-                    data: data.values, type: 'bar',
-                    itemStyle: { color: new echarts.graphic.LinearGradient(0,0,0,1,[
-                        {offset:0, color:'#42A5F5'}, {offset:1, color:'#1E88E5'}
-                    ])},
-                    label: { show: true, position: 'top', rotate: 45, fontSize: 10 }
-                }]
-            });
-        }
-
-        // 时段对比柱状图
-        function renderPeriodChart(data) {
-            const chart = echarts.init(document.getElementById('chart-period'));
-            chart.setOption({
-                tooltip: { trigger: 'axis' },
-                xAxis: { type: 'category', data: data.labels },
-                yAxis: { type: 'value', name: '出行量 (次)' },
-                series: [{
-                    data: data.values, type: 'bar',
-                    itemStyle: { color: new echarts.graphic.LinearGradient(0,0,0,1,[
-                        {offset:0, color:'#FF7043'}, {offset:1, color:'#E64A19'}
-                    ])},
-                    label: { show: true, position: 'top', formatter: '{c}%',
-                             fontSize: 12, fontWeight: 'bold' }
-                }]
-            });
-        }
-
-        // 热点区域柱状图
-        function renderHotspotChart(data) {
-            const chart = echarts.init(document.getElementById('chart-hotspots'));
-            chart.setOption({
-                tooltip: { trigger: 'axis' },
-                grid: { left: '25%' },
-                xAxis: { type: 'value', name: '出行量 (次)' },
-                yAxis: { type: 'category', data: data.labels, inverse: true,
-                         axisLabel: { fontSize: 10 } },
-                series: [{
-                    data: data.values, type: 'bar',
-                    itemStyle: { color: new echarts.graphic.LinearGradient(0,0,1,0,[
-                        {offset:0, color:'#FFA726'}, {offset:1, color:'#FF5722'}
-                    ])},
-                    label: { show: true, position: 'right', fontSize: 10 }
-                }]
-            });
-        }
-
-        // 页面加载时初始化
-        window.addEventListener('DOMContentLoaded', loadData);
-    </script>
-</body>
-</html>
-"""
-
-
-# ----------------------------------------------------------
+# ================================================================
 # 初始化数据
-# ----------------------------------------------------------
+# ================================================================
 def init_data():
-    """初始化分析器并加载数据"""
+    """预加载数据并预计算所有分析结果，确保API秒级响应"""
     global temporal_analyzer, spatial_analyzer
 
-    print("[INFO] 加载OD数据...")
+    log.info("正在初始化 Web 看板数据...")
+
+    # 加载清洗后的OD数据
     df = loader.load_cleaned_data()
+    log.info(f"OD数据加载完成: {len(df):,} 条行程, {len(df.columns)} 个字段")
 
-    print("[INFO] 初始化时序分析...")
+    # 初始化时序分析
+    log.info("初始化时序分析器...")
     temporal_analyzer = TemporalAnalyzer(df)
+    temporal_analyzer.hourly_trip_count()
+    temporal_analyzer.identify_peak_hours()
+    log.info("时序分析器就绪")
 
-    print("[INFO] 初始化空间分析...")
+    # 初始化空间分析
+    log.info("初始化空间分析器...")
     spatial_analyzer = SpatialAnalyzer(df)
     spatial_analyzer._build_grid()
+    spatial_analyzer.build_od_matrix()
+    spatial_analyzer.find_hotspots("start")
+    spatial_analyzer.net_flow_analysis()
+    log.info("空间分析器就绪")
 
-    print("[INFO] 初始化完成!")
-
-
-# ----------------------------------------------------------
-# API路由
-# ----------------------------------------------------------
-@app.route("/")
-def index():
-    """主页面"""
-    return render_template_string(DASHBOARD_HTML)
+    log.info("Web 看板数据初始化完成!")
 
 
-@app.route("/api/dashboard")
-def api_dashboard():
-    """看板数据API"""
-    global temporal_analyzer, spatial_analyzer
+# ================================================================
+# 私有数据获取函数（每个API端点对应一个）
+# ================================================================
 
-    if temporal_analyzer is None:
-        init_data()
-
-    # KPI数据
+def _get_kpis():
+    """KPI 指标卡片"""
     ta = temporal_analyzer
     if ta.hourly_stats is None:
         ta.hourly_trip_count()
@@ -253,53 +83,269 @@ def api_dashboard():
     total_vehicles = ta.df["VehicleNum"].nunique()
     avg_duration = ta.df["duration_min"].mean()
     peak_hour = ta.peak_info.get("peak_hour_max", 0)
+    peak_trips = ta.peak_info.get("peak_max_trips", 0)
 
-    kpis = [
+    return [
         {"label": "总出行量", "value": f"{total_trips:,}"},
         {"label": "活跃车辆", "value": f"{total_vehicles:,}"},
-        {"label": "平均时长(分钟)", "value": f"{avg_duration:.1f}"},
+        {"label": "平均时长", "value": f"{avg_duration:.1f} 分钟"},
         {"label": "高峰时段", "value": f"{int(peak_hour)}:00"},
-        {"label": "高峰出行量", "value": f"{ta.peak_info.get('peak_max_trips', 0):,}"},
+        {"label": "高峰出行量", "value": f"{peak_trips:,}"},
     ]
 
-    # 小时数据
+
+def _get_hourly_data():
+    """24小时出行量分布"""
+    ta = temporal_analyzer
+    if ta.hourly_stats is None:
+        ta.hourly_trip_count()
     hourly = ta.hourly_stats
-    hourly_data = {
+    return {
         "hours": [f"{h:02d}:00" for h in hourly["hour"]],
-        "values": hourly["trip_count"].tolist(),
+        "values": [int(v) for v in hourly["trip_count"].tolist()],
     }
 
-    # 时长分布
+
+def _get_duration_data():
+    """行程时长分布（7段）"""
+    ta = temporal_analyzer
     dur_stats = ta.duration_distribution()
-    dur_segments = dur_stats.get("segments", {})
-    duration_data = {
-        "labels": list(dur_segments.keys()),
-        "values": list(dur_segments.values()),
+    segments = dur_stats.get("segments", {})
+    return {
+        "labels": list(segments.keys()),
+        "values": list(segments.values()),
     }
 
-    # 时段数据
+
+def _get_period_data():
+    """4时段占比"""
+    ta = temporal_analyzer
     period_stats = ta.period_analysis()
-    period_data = {
+    return {
         "labels": period_stats["时段"].tolist(),
-        "values": period_stats["占比(%)"].round(1).tolist(),
+        "values": [round(v, 1) for v in period_stats["占比(%)"].tolist()],
     }
 
-    # 热点数据
-    if spatial_analyzer.hotspots is None:
-        spatial_analyzer.find_hotspots("start")
-    hotspots = spatial_analyzer.hotspots.head(15)
-    hotspot_data = {
-        "labels": [f"#{int(r['cluster_id'])} ({r['center_lng']:.3f},{r['center_lat']:.3f})"
-                   for _, r in hotspots.iterrows()],
-        "values": hotspots["count"].tolist(),
+
+def _get_hotspot_data():
+    """Top-15 出行热点"""
+    sa = spatial_analyzer
+    if sa.hotspots is None:
+        sa.find_hotspots("start")
+    hotspots = sa.hotspots.head(15)
+    return {
+        "labels": [
+            f"#{int(r['cluster_id'])} ({r['center_lng']:.3f},{r['center_lat']:.3f})"
+            for _, r in hotspots.iterrows()
+        ],
+        "values": [int(v) for v in hotspots["count"].tolist()],
     }
 
+
+def _get_distance_data():
+    """行程距离分布（NEW）"""
+    ta = temporal_analyzer
+    df = ta.df
+
+    # 自定义分箱
+    bins = [0, 1, 3, 5, 10, 20, 30, float("inf")]
+    labels = ["<1km", "1-3km", "3-5km", "5-10km", "10-20km", "20-30km", ">30km"]
+
+    dist = df["distance_km"]
+    binned = pd.cut(dist, bins=bins, labels=labels, right=True)
+    counts = binned.value_counts().reindex(labels, fill_value=0)
+
+    # 统计指标
+    stats = ta.distance_distribution()
+
+    return {
+        "labels": list(counts.index),
+        "values": [int(v) for v in counts.values],
+        "mean": round(float(dist.mean()), 2),
+        "median": round(float(dist.median()), 2),
+        "short_ratio": round(stats.get("short_trip_ratio", 0), 1),
+        "long_ratio": round(stats.get("long_trip_ratio", 0), 1),
+    }
+
+
+def _get_speed_data():
+    """行程速度分布（NEW）"""
+    ta = temporal_analyzer
+    df = ta.df
+
+    bins = [0, 10, 20, 30, 40, 50, 60, 80, float("inf")]
+    labels = ["0-10", "10-20", "20-30", "30-40", "40-50", "50-60", "60-80", ">80"]
+
+    speed = df["avg_speed"]
+    binned = pd.cut(speed, bins=bins, labels=labels, right=True)
+    counts = binned.value_counts().reindex(labels, fill_value=0)
+
+    return {
+        "labels": list(counts.index),
+        "values": [int(v) for v in counts.values],
+        "mean": round(float(speed.mean()), 1),
+        "median": round(float(speed.median()), 1),
+        "total": int(len(df)),
+    }
+
+
+def _get_vehicle_data():
+    """车辆运营效率 Top-15（NEW）"""
+    ta = temporal_analyzer
+    eff = ta.vehicle_efficiency().head(15)
+
+    vehicles = []
+    for _, row in eff.iterrows():
+        vehicles.append({
+            "id": int(row["VehicleNum"]),
+            "trips": int(row["trip_count"]),
+            "total_dur": round(float(row["total_duration"]), 1),
+            "total_dist": round(float(row["total_distance"]), 2),
+            "avg_dur": round(float(row["avg_duration"]), 1),
+            "avg_dist": round(float(row["avg_distance"]), 2),
+        })
+
+    return {"vehicles": vehicles}
+
+
+def _get_od_flow_data():
+    """
+    OD流向桑基图数据（NEW）
+    将 top_od_pairs 格式化为 ECharts Sankey 的 nodes + links
+    """
+    sa = spatial_analyzer
+    if sa.grid_od_matrix is None:
+        sa.build_od_matrix()
+
+    top_pairs = sa.top_od_pairs(30)
+
+    # 收集唯一网格节点
+    node_set = set()
+    pairs = []
+    for _, row in top_pairs.iterrows():
+        o_name = f"({row['O_lng']:.3f},{row['O_lat']:.3f})"
+        d_name = f"({row['D_lng']:.3f},{row['D_lat']:.3f})"
+        node_set.add(o_name)
+        node_set.add(d_name)
+        pairs.append({
+            "source": o_name,
+            "target": d_name,
+            "value": int(row["flow"]),
+        })
+
+    nodes = [{"name": n} for n in sorted(node_set)]
+
+    return {
+        "nodes": nodes,
+        "links": pairs,
+    }
+
+
+def _get_net_flow_data():
+    """
+    区域净流入/流出（NEW）
+    取 Top 15 净流入 + Top 15 净流出
+    """
+    sa = spatial_analyzer
+    if sa.grid_od_matrix is None:
+        sa.build_od_matrix()
+
+    flow_df = sa.net_flow_analysis()
+
+    # Top 15 净流入（正值最大）
+    top_in = flow_df.nlargest(15, "net_flow")
+    # Top 15 净流出（负值最大，即流出最多）
+    top_out = flow_df.nsmallest(15, "net_flow")
+
+    def format_label(row):
+        return f"({row['lng']:.3f},{row['lat']:.3f})"
+
+    return {
+        "in_labels": [format_label(r) for _, r in top_in.iterrows()],
+        "in_values": [int(r["net_flow"]) for _, r in top_in.iterrows()],
+        "out_labels": [format_label(r) for _, r in top_out.iterrows()],
+        "out_values": [int(abs(r["net_flow"])) for _, r in top_out.iterrows()],
+    }
+
+
+# ================================================================
+# API 路由
+# ================================================================
+
+@app.route("/")
+def index():
+    """主页面 — Jinja2 模板渲染"""
+    return render_template("index.html")
+
+
+# --- 细粒度API（10个） ---
+
+@app.route("/api/kpis")
+def api_kpis():
+    return jsonify(_get_kpis())
+
+
+@app.route("/api/hourly")
+def api_hourly():
+    return jsonify(_get_hourly_data())
+
+
+@app.route("/api/duration")
+def api_duration():
+    return jsonify(_get_duration_data())
+
+
+@app.route("/api/period")
+def api_period():
+    return jsonify(_get_period_data())
+
+
+@app.route("/api/hotspots")
+def api_hotspots():
+    return jsonify(_get_hotspot_data())
+
+
+@app.route("/api/distance")
+def api_distance():
+    return jsonify(_get_distance_data())
+
+
+@app.route("/api/speed")
+def api_speed():
+    return jsonify(_get_speed_data())
+
+
+@app.route("/api/vehicles")
+def api_vehicles():
+    return jsonify(_get_vehicle_data())
+
+
+@app.route("/api/od-flows")
+def api_od_flows():
+    return jsonify(_get_od_flow_data())
+
+
+@app.route("/api/net-flow")
+def api_net_flow():
+    return jsonify(_get_net_flow_data())
+
+
+# --- 聚合API（向后兼容） ---
+
+@app.route("/api/dashboard")
+def api_dashboard():
+    """聚合所有数据 — 与旧版兼容，额外返回新图表数据"""
     return jsonify({
-        "kpis": kpis,
-        "hourly": hourly_data,
-        "duration": duration_data,
-        "period": period_data,
-        "hotspots": hotspot_data,
+        "kpis": _get_kpis(),
+        "hourly": _get_hourly_data(),
+        "duration": _get_duration_data(),
+        "period": _get_period_data(),
+        "hotspots": _get_hotspot_data(),
+        "distance": _get_distance_data(),
+        "speed": _get_speed_data(),
+        "vehicles": _get_vehicle_data(),
+        "od_flows": _get_od_flow_data(),
+        "net_flow": _get_net_flow_data(),
     })
 
 
@@ -309,19 +355,20 @@ def health():
     return jsonify({"status": "ok", "message": "服务运行正常"})
 
 
-# ----------------------------------------------------------
+# ================================================================
 # 启动
-# ----------------------------------------------------------
+# ================================================================
 if __name__ == "__main__":
     print("=" * 55)
-    print("  城市出行数据分析系统 - Flask Web服务")
+    print("  城市出行数据分析系统 - Flask Web 服务")
+    print("  shine 主题 | ECharts 5.5 | 9 张交互图表")
     print("=" * 55)
 
     # 预加载数据
     init_data()
 
     print(f"\n[INFO] 服务地址: http://{FLASK_HOST}:{FLASK_PORT}")
-    print(f"[INFO] 管理面板: http://localhost:{FLASK_PORT}")
+    print(f"[INFO] 本地访问: http://localhost:{FLASK_PORT}")
     print()
 
     app.run(

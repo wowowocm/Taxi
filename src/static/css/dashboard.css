@@ -1,0 +1,146 @@
+/* ========================================================
+   城市出租车出行行为分析系统 — 看板样式
+   ======================================================== */
+
+/* --- Reset & Base --- */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: "Microsoft YaHei", "PingFang SC", "WenQuanYi Micro Hei",
+                 "Noto Sans SC", "DejaVu Sans", sans-serif;
+    background: #f0f2f5;
+    min-height: 100vh;
+}
+
+/* --- Header --- */
+.header {
+    background: linear-gradient(135deg, #1a237e, #283593);
+    color: white;
+    padding: 20px 30px;
+    text-align: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+.header h1 {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: 2px;
+}
+.header p {
+    opacity: 0.8;
+    margin-top: 8px;
+    font-size: 14px;
+}
+
+/* --- KPI Row --- */
+.kpi-row {
+    display: flex;
+    gap: 15px;
+    padding: 20px 20px 5px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+.kpi-card {
+    background: white;
+    border-radius: 10px;
+    padding: 20px 25px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    text-align: center;
+    min-width: 150px;
+    flex: 1;
+    max-width: 220px;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.kpi-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+}
+.kpi-value {
+    font-size: 30px;
+    font-weight: bold;
+    color: #1a237e;
+    line-height: 1.2;
+}
+.kpi-label {
+    font-size: 13px;
+    color: #888;
+    margin-top: 5px;
+}
+
+/* --- Charts Grid --- */
+.charts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+    gap: 20px;
+    padding: 0 20px 20px;
+}
+.chart-card {
+    background: white;
+    border-radius: 10px;
+    padding: 15px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.chart-card h3 {
+    color: #333;
+    margin-bottom: 10px;
+    font-size: 16px;
+    font-weight: 600;
+    padding-left: 5px;
+    border-left: 3px solid #1a237e;
+}
+.chart {
+    width: 100%;
+    height: 380px;
+}
+
+/* Full-width chart (e.g. Sankey) */
+.chart-full {
+    grid-column: 1 / -1;
+}
+.chart-full .chart {
+    height: 500px;
+}
+
+/* --- Loading & Error States --- */
+.loading {
+    text-align: center;
+    padding: 50px;
+    color: #888;
+    font-size: 14px;
+}
+.loading::before {
+    content: "⏳ ";
+}
+.error-state {
+    color: #999;
+    text-align: center;
+    padding: 100px 20px;
+    font-size: 13px;
+}
+.error-state::before {
+    content: "⚠️ 数据加载失败 — ";
+}
+
+/* --- Footer --- */
+.footer {
+    text-align: center;
+    padding: 20px;
+    color: #aaa;
+    font-size: 12px;
+    border-top: 1px solid #eee;
+}
+
+/* --- Responsive --- */
+@media (max-width: 600px) {
+    .charts-grid {
+        grid-template-columns: 1fr;
+    }
+    .chart-card .chart {
+        height: 280px;
+    }
+    .chart-full .chart {
+        height: 380px;
+    }
+    .header h1 { font-size: 20px; }
+    .kpi-card { min-width: 120px; padding: 12px 15px; }
+    .kpi-value { font-size: 22px; }
+}

@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block title %}深圳市出租车出行行为分析看板{% endblock %}
+
+{% block content %}
+<div class="kpi-row" id="kpi-cards">
+    <div class="loading">正在加载 KPI 数据...</div>
+</div>
+
+<div class="charts-grid">
+    <!-- 行1: 时序 -->
+    <div class="chart-card">
+        <h3>📈 24小时出行量分布</h3>
+        <div class="chart" id="chart-hourly"></div>
+    </div>
+    <div class="chart-card">
+        <h3>⏱ 行程时长分布</h3>
+        <div class="chart" id="chart-duration"></div>
+    </div>
+
+    <!-- 行2: 时段 + 热点 -->
+    <div class="chart-card">
+        <h3>🕐 各时段出行量对比</h3>
+        <div class="chart" id="chart-period"></div>
+    </div>
+    <div class="chart-card">
+        <h3>📍 Top-15 出行热点区域</h3>
+        <div class="chart" id="chart-hotspots"></div>
+    </div>
+
+    <!-- 行3: 距离 + 速度 NEW -->
+    <div class="chart-card">
+        <h3>📏 行程距离分布</h3>
+        <div class="chart" id="chart-distance"></div>
+    </div>
+    <div class="chart-card">
+        <h3>⚡ 行程速度分布</h3>
+        <div class="chart" id="chart-speed"></div>
+    </div>
+
+    <!-- 行4: 车辆效率 + 净流入/流出 NEW -->
+    <div class="chart-card">
+        <h3>🚖 车辆运营效率 Top-15</h3>
+        <div class="chart" id="chart-efficiency"></div>
+    </div>
+    <div class="chart-card">
+        <h3>🔄 区域净流入/流出 Top-30</h3>
+        <div class="chart" id="chart-netflow"></div>
+    </div>
+
+    <!-- 行5: OD桑基图全宽 NEW -->
+    <div class="chart-card chart-full">
+        <h3>🌐 OD出行流向桑基图（Top-30 OD对）</h3>
+        <div class="chart" id="chart-sankey"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/core/api.js') }}"></script>
+<script src="{{ url_for('static', filename='js/core/chart-manager.js') }}"></script>
+<script src="{{ url_for('static', filename='js/charts/hourly.js') }}"></script>
+<script src="{{ url_for('static', filename='js/charts/duration.js') }}"></script>
+<script src="{{ url_for('static', filename='js/charts/period.js') }}"></script>
+<script src="{{ url_for('static', filename='js/charts/hotspots.js') }}"></script>
+<script src="{{ url_for('static', filename='js/charts/distance.js') }}"></script>
+<script src="{{ url_for('static', filename='js/charts/speed.js') }}"></script>
+<script src="{{ url_for('static', filename='js/charts/efficiency.js') }}"></script>
+<script src="{{ url_for('static', filename='js/charts/net-flow.js') }}"></script>
+<script src="{{ url_for('static', filename='js/charts/od-sankey.js') }}"></script>
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}
