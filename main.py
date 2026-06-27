@@ -10,17 +10,24 @@
 
 import os
 import sys
+import time
 import argparse
+import traceback
 
 # 添加项目路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from src.config import RAW_DATA_PATH, CLEANED_DATA_PATH, FIGURES_DIR, REPORTS_DIR
+from src.config import RAW_DATA_PATH, CLEANED_DATA_PATH, FIGURES_DIR, REPORTS_DIR, LOG_DIR
+from src.logger import setup_logger, get_logger
 from src.data_loader import DataLoader
 from src.data_cleaner import DataCleaner
 from src.temporal_analysis import TemporalAnalyzer
 from src.spatial_analysis import SpatialAnalyzer
 from src.visualization import Visualizer
+
+# 初始化日志
+os.makedirs(LOG_DIR, exist_ok=True)
+log = setup_logger("taxi_analysis")
 
 
 def ensure_dirs():
@@ -31,37 +38,49 @@ def ensure_dirs():
 
 def run_data_cleaning():
     """执行数据清洗流水线"""
-    print("\n" + "=" * 60)
-    print("  模式: 数据清洗流水线")
-    print("=" * 60)
+    log.section("模式: 数据清洗流水线")
+    start_time = time.time()
 
     loader = DataLoader()
     cleaner = DataCleaner()
 
-    # 加载原始数据
-    raw_df = loader.load_raw_data()
+    try:
+        # 加载原始数据
+        raw_df = loader.load_raw_data()
+        log.info(f"原始数据加载完成: {len(raw_df):,} 条记录, {len(raw_df.columns)} 个字段")
 
-    # 生成清洗前质量报告
-    loader.generate_quality_report(raw_df)
+        # 生成清洗前质量报告
+        loader.generate_quality_report(raw_df)
 
-    # 执行清洗流水线
-    cleaned_df = cleaner.run_pipeline(raw_df)
+        # 执行清洗流水线
+        cleaned_df = cleaner.run_pipeline(raw_df)
+        log.info(f"清洗流水线完成: {len(cleaned_df):,} 条有效行程")
 
-    # 导出
-    output_path = os.path.join(os.path.dirname(RAW_DATA_PATH), "taxi_sz_cleaned.csv")
-    cleaner.export_cleaned_data(cleaned_df, output_path)
+        # 导出到 tax_data/taxi_sz.csv (覆盖原文件)
+        output_path = CLEANED_DATA_PATH
+        cleaner.export_cleaned_data(cleaned_df, output_path)
+        log.info(f"清洗数据已导出: {output_path}")
 
-    # 打印清洗报告
-    print(cleaner.get_cleaning_report())
+        # 打印清洗报告
+        report = cleaner.get_cleaning_report()
+        log.info(report)
+
+    except Exception as e:
+        log.error(f"数据清洗失败: {e}")
+        log.error(traceback.format_exc())
+        raise
+
+    elapsed = time.time() - start_time
+    log.info(f"数据清洗总耗时: {elapsed:.2f}秒")
+    log.info(f"日志文件: {log.get_log_file()}")
 
     return cleaned_df
 
 
 def run_analysis(df=None):
     """执行完整分析"""
-    print("\n" + "=" * 60)
-    print("  模式: 数据分析")
-    print("=" * 60)
+    log.section("模式: 数据分析")
+    start_time = time.time()
 
     ensure_dirs()
 
@@ -70,71 +89,86 @@ def run_analysis(df=None):
     if df is None:
         df = loader.load_cleaned_data()
 
-    loader.generate_od_report(df)
+    log.info(f"分析数据: {len(df):,} 条行程, {len(df.columns)} 个字段")
 
-    # 时序分析
-    print("\n" + "-" * 40)
-    print("  时序分析")
-    print("-" * 40)
-    temporal = TemporalAnalyzer(df)
-    temporal.hourly_trip_count()
-    temporal.identify_peak_hours()
-    temporal.duration_distribution()
-    temporal.distance_distribution()
-    temporal.period_analysis()
-    efficiency = temporal.vehicle_efficiency()
+    try:
+        loader.generate_od_report(df)
 
-    # 空间分析
-    print("\n" + "-" * 40)
-    print("  空间分析")
-    print("-" * 40)
-    spatial = SpatialAnalyzer(df)
-    spatial._build_grid()
-    spatial.build_od_matrix()
-    spatial.find_hotspots("start")
-    spatial.find_hotspots("end")
-    spatial.net_flow_analysis()
+        # 时序分析
+        log.section("时序分析")
+        temporal = TemporalAnalyzer(df)
+        temporal.hourly_trip_count()
+        temporal.identify_peak_hours()
+        temporal.duration_distribution()
+        temporal.distance_distribution()
+        temporal.period_analysis()
+        efficiency = temporal.vehicle_efficiency()
 
-    # 可视化
-    print("\n" + "-" * 40)
-    print("  可视化")
-    print("-" * 40)
-    viz = Visualizer()
-    viz.set_analyzers(temporal, spatial)
+        # 空间分析
+        log.section("空间分析")
+        spatial = SpatialAnalyzer(df)
+        spatial._build_grid()
+        spatial.build_od_matrix()
+        spatial.find_hotspots("start")
+        spatial.find_hotspots("end")
+        spatial.net_flow_analysis()
 
-    # 时序图表
-    viz.hourly_trip_chart()
-    viz.duration_histogram()
-    viz.scatter_duration_distance()
+        # 可视化
+        log.section("可视化")
+        viz = Visualizer()
+        viz.set_analyzers(temporal, spatial)
 
-    # 空间图表
-    density = spatial.trip_density("start")
-    viz.heatmap_map(density, "出行起点热力分布", "heatmap_start.html")
+        # 时序图表
+        viz.hourly_trip_chart()
+        viz.duration_histogram()
+        viz.scatter_duration_distance()
 
-    if spatial.hotspots is not None:
-        viz.hotspot_bar_chart()
+        # 空间图表
+        density = spatial.trip_density("start")
+        viz.heatmap_map(density, "出行起点热力分布", "heatmap_start.html")
 
-    # 综合看板
-    viz.create_dashboard()
+        if spatial.hotspots is not None:
+            viz.hotspot_bar_chart()
 
-    # 生成分析报告
-    generate_report(temporal, spatial, efficiency)
+        # 综合看板
+        viz.create_dashboard()
 
-    print("\n[完成] 所有分析已完成!")
-    print(f"[完成] 图表输出目录: {FIGURES_DIR}")
-    print(f"[完成] 报告输出目录: {REPORTS_DIR}")
+        # 生成分析报告
+        generate_report(temporal, spatial, efficiency)
+
+    except Exception as e:
+        log.error(f"数据分析失败: {e}")
+        log.error(traceback.format_exc())
+        raise
+
+    elapsed = time.time() - start_time
+    log.info(f"[完成] 所有分析已完成! 总耗时: {elapsed:.2f}秒")
+    log.info(f"[完成] 图表输出目录: {FIGURES_DIR}")
+    log.info(f"[完成] 报告输出目录: {REPORTS_DIR}")
+    log.info(f"[完成] 日志文件: {log.get_log_file()}")
 
 
 def generate_report(temporal, spatial, efficiency):
     """生成Markdown分析报告"""
+    log.info("正在生成分析报告...")
+
+    df = temporal.df
+    total_trips = len(df)
+
+    # 安全获取统计值
+    avg_duration = df["duration_min"].mean() if "duration_min" in df.columns else 0
+    avg_distance = df["distance_km"].mean() if "distance_km" in df.columns else 0
+    short_trip_ratio = (df["distance_km"] < 3).mean() * 100 if "distance_km" in df.columns else 0
+    long_trip_ratio = (df["distance_km"] > 10).mean() * 100 if "distance_km" in df.columns else 0
+
     lines = [
         "# 深圳市出租车出行行为分析报告",
         "",
         f"## 1. 数据概览",
-        f"- 总出行量: {len(temporal.df):,} 次",
-        f"- 活跃车辆数: {temporal.df['VehicleNum'].nunique():,} 辆",
-        f"- 平均行程时长: {temporal.df['duration_min'].mean():.1f} 分钟",
-        f"- 平均行程距离: {temporal.df['distance_km'].mean():.2f} km",
+        f"- 总出行量: {total_trips:,} 次",
+        f"- 活跃车辆数: {df['VehicleNum'].nunique():,} 辆",
+        f"- 平均行程时长: {avg_duration:.1f} 分钟",
+        f"- 平均行程距离: {avg_distance:.2f} km",
         "",
         f"## 2. 出行高峰",
     ]
@@ -149,8 +183,8 @@ def generate_report(temporal, spatial, efficiency):
     lines.extend([
         "",
         "## 3. 出行特征",
-        f"- 短途出行(<3km)占比: ...%",
-        f"- 长途出行(>10km)占比: ...%",
+        f"- 短途出行(<3km)占比: {short_trip_ratio:.1f}%",
+        f"- 长途出行(>10km)占比: {long_trip_ratio:.1f}%",
         "",
         "## 4. 空间分析",
         f"- 热点区域数量: {len(spatial.hotspots) if spatial.hotspots is not None else 0}",
@@ -170,10 +204,11 @@ def generate_report(temporal, spatial, efficiency):
     ])
 
     report_path = os.path.join(REPORTS_DIR, "analysis_report.md")
+    os.makedirs(os.path.dirname(report_path), exist_ok=True)
     with open(report_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
-    print(f"[INFO] 分析报告已保存: {report_path}")
+    log.info(f"分析报告已保存: {report_path}")
 
 
 def run_web():
@@ -181,9 +216,12 @@ def run_web():
     from src.web_app import app, FLASK_HOST, FLASK_PORT, FLASK_DEBUG
     from src.web_app import init_data
 
+    log.section("模式: Web看板")
+    log.info("正在初始化数据...")
     init_data()
 
-    print(f"\n[INFO] 打开浏览器访问: http://localhost:{FLASK_PORT}")
+    log.info(f"打开浏览器访问: http://localhost:{FLASK_PORT}")
+    log.info(f"日志文件: {log.get_log_file()}")
     app.run(host=FLASK_HOST, port=FLASK_PORT, debug=FLASK_DEBUG)
 
 

@@ -12,8 +12,8 @@ from .config import (
     RAW_DATA_PATH, CLEANED_DATA_PATH, SHENZHEN_LNG_MIN,
     SHENZHEN_LNG_MAX, SHENZHEN_LAT_MIN, SHENZHEN_LAT_MAX,
     PANDAS_MAX_ROWS, PANDAS_MAX_COLUMNS, CHUNK_SIZE,
-    LOG_DIR
 )
+from .logger import get_logger
 
 # 设置Pandas显示选项
 pd.set_option("display.max_rows", PANDAS_MAX_ROWS)
@@ -50,12 +50,13 @@ class DataLoader:
         if not os.path.exists(path):
             raise FileNotFoundError(f"数据文件不存在: {path}")
 
-        print(f"[INFO] 正在加载原始GPS数据: {path}")
+        log = get_logger()
+        log.info(f"正在加载原始GPS数据: {path}")
         start = time.time()
 
         # 自动检测编码
         encoding = self._detect_encoding(path)
-        print(f"[INFO] 检测到文件编码: {encoding}")
+        log.info(f"检测到文件编码: {encoding}")
 
         # 读取CSV
         self.raw_df = pd.read_csv(path, encoding=encoding)
@@ -64,8 +65,8 @@ class DataLoader:
         self.raw_df.columns = self.raw_df.columns.str.strip()
 
         elapsed = time.time() - start
-        print(f"[INFO] 数据加载完成! 耗时: {elapsed:.2f}秒")
-        print(f"[INFO] 记录数: {len(self.raw_df):,}, 字段数: {len(self.raw_df.columns)}")
+        log.info(f"数据加载完成! 耗时: {elapsed:.2f}秒")
+        log.info(f"记录数: {len(self.raw_df):,}, 字段数: {len(self.raw_df.columns)}")
 
         return self.raw_df
 

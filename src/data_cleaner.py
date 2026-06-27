@@ -19,6 +19,7 @@ from .config import (
     TRIP_DURATION_MIN, TRIP_DURATION_MAX,
     TRIP_DISTANCE_MIN, TRIP_AVG_SPEED_MIN, TRIP_AVG_SPEED_MAX,
 )
+from .logger import get_logger
 
 
 class DataCleaner:
@@ -283,9 +284,11 @@ class DataCleaner:
 
         df_clean = df[valid].copy()
 
-        # 清理辅助列，只保留需要的字段
-        df_clean = df_clean[["VehicleNum", "Stime", "SLng", "SLat",
-                              "ELng", "ELat", "Etime"]]
+        # 清理辅助列，保留核心字段和计算列
+        keep_cols = ["VehicleNum", "Stime", "SLng", "SLat",
+                     "ELng", "ELat", "Etime",
+                     "duration_min", "distance_km", "avg_speed"]
+        df_clean = df_clean[keep_cols].copy()
 
         removed = before - len(df_clean)
         print(f"  过滤前: {before:,} 条")
@@ -318,6 +321,8 @@ class DataCleaner:
         print("\n" + "=" * 60)
         print("  开始数据清洗流水线")
         print("=" * 60)
+        log = get_logger()
+        log.info("开始数据清洗流水线")
         total_start = time.time()
 
         current = df.copy()
@@ -332,14 +337,15 @@ class DataCleaner:
             # 步骤3&4: 行程切片与OD提取
             current = self.extract_trips(current)
         else:
-            print("\n[INFO] 跳过GPS→OD转换，直接进行行程过滤")
+            log.info("跳过GPS→OD转换，直接进行行程过滤")
 
         # 步骤5: 异常行程过滤
         current = self.filter_abnormal_trips(current)
 
         total_elapsed = time.time() - total_start
-        print(f"\n[完成] 清洗流水线总耗时: {total_elapsed:.2f}秒")
-        print(f"[完成] 最终输出: {len(current):,} 条有效行程记录")
+        log.info(f"清洗流水线总耗时: {total_elapsed:.2f}秒")
+        log.info(f"最终输出: {len(current):,} 条有效行程记录")
+        log.info(f"输出字段: {list(current.columns)}")
 
         return current
 
@@ -357,8 +363,9 @@ class DataCleaner:
         filepath : str
             输出文件路径
         """
+        log = get_logger()
         df.to_csv(filepath, index=False, encoding="utf-8-sig")
-        print(f"[INFO] 清洗数据已导出至: {filepath}")
+        log.info(f"清洗数据已导出至: {filepath} (共 {len(df):,} 条)")
 
     # ----------------------------------------------------------
     # 辅助方法

@@ -1,0 +1,178 @@
+2026-06-27 08:31:21 | INFO     | logger:80 | ============================================================
+2026-06-27 08:31:21 | INFO     | logger:80 |   模式: 数据清洗流水线
+2026-06-27 08:31:21 | INFO     | logger:80 | ============================================================
+2026-06-27 08:31:21 | INFO     | logger:80 | 正在加载原始GPS数据: D:\code_king\Data\Taxi\tax_data\乘车出行数据源.csv
+2026-06-27 08:31:21 | INFO     | logger:80 | 检测到文件编码: utf-8
+2026-06-27 08:31:22 | INFO     | logger:80 | 数据加载完成! 耗时: 0.74秒
+2026-06-27 08:31:22 | INFO     | logger:80 | 记录数: 1,601,307, 字段数: 6
+2026-06-27 08:31:22 | INFO     | logger:80 | 原始数据加载完成: 1,601,307 条记录, 6 个字段
+2026-06-27 08:31:22 | INFO     | logger:80 | 开始数据清洗流水线
+2026-06-27 08:31:24 | INFO     | logger:80 | 清洗流水线总耗时: 1.95秒
+2026-06-27 08:31:24 | INFO     | logger:80 | 最终输出: 8,517 条有效行程记录
+2026-06-27 08:31:24 | INFO     | logger:80 | 输出字段: ['VehicleNum', 'Stime', 'SLng', 'SLat', 'ELng', 'ELat', 'Etime', 'duration_min', 'distance_km', 'avg_speed']
+2026-06-27 08:31:24 | INFO     | logger:80 | 清洗流水线完成: 8,517 条有效行程
+2026-06-27 08:31:24 | INFO     | logger:80 | 清洗数据已导出至: D:\code_king\Data\Taxi\tax_data\taxi_sz.csv (共 8,517 条)
+2026-06-27 08:31:24 | INFO     | logger:80 | 清洗数据已导出: D:\code_king\Data\Taxi\tax_data\taxi_sz.csv
+2026-06-27 08:31:24 | INFO     | logger:80 | 
+数据清洗报告
+==================================================
+  规则1-异常坐标过滤: 1,601,307 → 1,599,329 (剔除 1,978, 0.12%)
+  规则2-异常速度处理: 1,599,329 → 1,599,329 (剔除 0, 0.00%)
+  规则3&4-行程切片与OD提取: 1,599,329 → 16,783 (剔除 1,582,546, 98.95%)
+  规则5-异常行程过滤: 16,783 → 8,517 (剔除 8,266, 49.25%)
+2026-06-27 08:31:24 | INFO     | logger:80 | 数据清洗总耗时: 3.10秒
+2026-06-27 08:31:24 | INFO     | logger:80 | 日志文件: D:\code_king\Data\Taxi\log\taxi_analysis_20260627.log
+2026-06-27 08:31:29 | INFO     | logger:80 | ============================================================
+2026-06-27 08:31:29 | INFO     | logger:80 |   模式: 数据分析
+2026-06-27 08:31:29 | INFO     | logger:80 | ============================================================
+2026-06-27 08:31:29 | INFO     | logger:80 | 分析数据: 8,517 条行程, 10 个字段
+2026-06-27 08:31:29 | INFO     | logger:80 | ============================================================
+2026-06-27 08:31:29 | INFO     | logger:80 |   时序分析
+2026-06-27 08:31:29 | INFO     | logger:80 | ============================================================
+2026-06-27 08:31:29 | INFO     | logger:80 | ============================================================
+2026-06-27 08:31:29 | INFO     | logger:80 |   空间分析
+2026-06-27 08:31:29 | INFO     | logger:80 | ============================================================
+2026-06-27 08:31:30 | INFO     | logger:80 | ============================================================
+2026-06-27 08:31:30 | INFO     | logger:80 |   可视化
+2026-06-27 08:31:30 | INFO     | logger:80 | ============================================================
+2026-06-27 08:31:30 | ERROR    | logger:86 | 数据分析失败: Invalid RGBA argument: 'rgba(255,152,0,0.08)'
+2026-06-27 08:31:30 | ERROR    | logger:86 | Traceback (most recent call last):
+  File "main.py", line 122, in run_analysis
+    viz.hourly_trip_chart()
+  File "D:\code_king\Data\Taxi\src\visualization.py", line 179, in hourly_trip_chart
+    ax.axvspan(start_h, end_h, color=colors.get(period_name, "none"),
+  File "D:\code_king\Data\Taxi\.venv_py38\lib\site-packages\matplotlib\axes\_axes.py", line 1026, in axvspan
+    p = mpatches.Polygon(verts, **kwargs)
+  File "D:\code_king\Data\Taxi\.venv_py38\lib\site-packages\matplotlib\_api\deprecation.py", line 454, in wrapper
+    return func(*args, **kwargs)
+  File "D:\code_king\Data\Taxi\.venv_py38\lib\site-packages\matplotlib\patches.py", line 1093, in __init__
+    super().__init__(**kwargs)
+  File "D:\code_king\Data\Taxi\.venv_py38\lib\site-packages\matplotlib\_api\deprecation.py", line 454, in wrapper
+    return func(*args, **kwargs)
+  File "D:\code_king\Data\Taxi\.venv_py38\lib\site-packages\matplotlib\patches.py", line 82, in __init__
+    self.set_color(color)
+  File "D:\code_king\Data\Taxi\.venv_py38\lib\site-packages\matplotlib\patches.py", line 374, in set_color
+    self.set_facecolor(c)
+  File "D:\code_king\Data\Taxi\.venv_py38\lib\site-packages\matplotlib\patches.py", line 359, in set_facecolor
+    self._set_facecolor(color)
+  File "D:\code_king\Data\Taxi\.venv_py38\lib\site-packages\matplotlib\patches.py", line 347, in _set_facecolor
+    self._facecolor = colors.to_rgba(color, alpha)
+  File "D:\code_king\Data\Taxi\.venv_py38\lib\site-packages\matplotlib\colors.py", line 299, in to_rgba
+    rgba = _to_rgba_no_colorcycle(c, alpha)
+  File "D:\code_king\Data\Taxi\.venv_py38\lib\site-packages\matplotlib\colors.py", line 374, in _to_rgba_no_colorcycle
+    raise ValueError(f"Invalid RGBA argument: {orig_c!r}")
+ValueError: Invalid RGBA argument: 'rgba(255,152,0,0.08)'
+
+2026-06-27 08:31:48 | INFO     | logger:80 | ============================================================
+2026-06-27 08:31:48 | INFO     | logger:80 |   模式: 数据分析
+2026-06-27 08:31:48 | INFO     | logger:80 | ============================================================
+2026-06-27 08:31:48 | INFO     | logger:80 | 分析数据: 8,517 条行程, 10 个字段
+2026-06-27 08:31:48 | INFO     | logger:80 | ============================================================
+2026-06-27 08:31:48 | INFO     | logger:80 |   时序分析
+2026-06-27 08:31:48 | INFO     | logger:80 | ============================================================
+2026-06-27 08:31:48 | INFO     | logger:80 | ============================================================
+2026-06-27 08:31:48 | INFO     | logger:80 |   空间分析
+2026-06-27 08:31:48 | INFO     | logger:80 | ============================================================
+2026-06-27 08:31:50 | INFO     | logger:80 | ============================================================
+2026-06-27 08:31:50 | INFO     | logger:80 |   可视化
+2026-06-27 08:31:50 | INFO     | logger:80 | ============================================================
+2026-06-27 08:31:52 | INFO     | logger:80 | 正在生成分析报告...
+2026-06-27 08:31:52 | INFO     | logger:80 | 分析报告已保存: D:\code_king\Data\Taxi\output\reports\analysis_report.md
+2026-06-27 08:31:52 | INFO     | logger:80 | [完成] 所有分析已完成! 总耗时: 4.00秒
+2026-06-27 08:31:52 | INFO     | logger:80 | [完成] 图表输出目录: D:\code_king\Data\Taxi\output\figures
+2026-06-27 08:31:52 | INFO     | logger:80 | [完成] 报告输出目录: D:\code_king\Data\Taxi\output\reports
+2026-06-27 08:31:52 | INFO     | logger:80 | [完成] 日志文件: D:\code_king\Data\Taxi\log\taxi_analysis_20260627.log
+2026-06-27 08:33:56 | INFO     | logger:80 | ============================================================
+2026-06-27 08:33:56 | INFO     | logger:80 |   模式: 数据分析
+2026-06-27 08:33:56 | INFO     | logger:80 | ============================================================
+2026-06-27 08:33:56 | INFO     | logger:80 | 分析数据: 8,517 条行程, 10 个字段
+2026-06-27 08:33:56 | INFO     | logger:80 | ============================================================
+2026-06-27 08:33:56 | INFO     | logger:80 |   时序分析
+2026-06-27 08:33:56 | INFO     | logger:80 | ============================================================
+2026-06-27 08:33:57 | INFO     | logger:80 | ============================================================
+2026-06-27 08:33:57 | INFO     | logger:80 |   空间分析
+2026-06-27 08:33:57 | INFO     | logger:80 | ============================================================
+2026-06-27 08:33:57 | INFO     | logger:80 | ============================================================
+2026-06-27 08:33:57 | INFO     | logger:80 |   可视化
+2026-06-27 08:33:57 | INFO     | logger:80 | ============================================================
+2026-06-27 08:33:59 | INFO     | logger:80 | 正在生成分析报告...
+2026-06-27 08:33:59 | INFO     | logger:80 | 分析报告已保存: D:\code_king\Data\Taxi\output\reports\analysis_report.md
+2026-06-27 08:33:59 | INFO     | logger:80 | [完成] 所有分析已完成! 总耗时: 2.65秒
+2026-06-27 08:33:59 | INFO     | logger:80 | [完成] 图表输出目录: D:\code_king\Data\Taxi\output\figures
+2026-06-27 08:33:59 | INFO     | logger:80 | [完成] 报告输出目录: D:\code_king\Data\Taxi\output\reports
+2026-06-27 08:33:59 | INFO     | logger:80 | [完成] 日志文件: D:\code_king\Data\Taxi\log\taxi_analysis_20260627.log
+2026-06-27 08:34:49 | INFO     | logger:80 | ============================================================
+2026-06-27 08:34:49 | INFO     | logger:80 |   模式: 数据分析
+2026-06-27 08:34:49 | INFO     | logger:80 | ============================================================
+2026-06-27 08:34:49 | INFO     | logger:80 | 分析数据: 8,517 条行程, 10 个字段
+2026-06-27 08:34:49 | INFO     | logger:80 | ============================================================
+2026-06-27 08:34:49 | INFO     | logger:80 |   时序分析
+2026-06-27 08:34:49 | INFO     | logger:80 | ============================================================
+2026-06-27 08:34:49 | INFO     | logger:80 | ============================================================
+2026-06-27 08:34:49 | INFO     | logger:80 |   空间分析
+2026-06-27 08:34:49 | INFO     | logger:80 | ============================================================
+2026-06-27 08:34:50 | INFO     | logger:80 | ============================================================
+2026-06-27 08:34:50 | INFO     | logger:80 |   可视化
+2026-06-27 08:34:50 | INFO     | logger:80 | ============================================================
+2026-06-27 08:34:52 | INFO     | logger:80 | 正在生成分析报告...
+2026-06-27 08:34:52 | INFO     | logger:80 | 分析报告已保存: D:\code_king\Data\Taxi\output\reports\analysis_report.md
+2026-06-27 08:34:52 | INFO     | logger:80 | [完成] 所有分析已完成! 总耗时: 2.73秒
+2026-06-27 08:34:52 | INFO     | logger:80 | [完成] 图表输出目录: D:\code_king\Data\Taxi\output\figures
+2026-06-27 08:34:52 | INFO     | logger:80 | [完成] 报告输出目录: D:\code_king\Data\Taxi\output\reports
+2026-06-27 08:34:52 | INFO     | logger:80 | [完成] 日志文件: D:\code_king\Data\Taxi\log\taxi_analysis_20260627.log
+2026-06-27 08:35:07 | INFO     | logger:80 | ============================================================
+2026-06-27 08:35:07 | INFO     | logger:80 |   模式: 数据分析
+2026-06-27 08:35:07 | INFO     | logger:80 | ============================================================
+2026-06-27 08:35:07 | INFO     | logger:80 | 分析数据: 8,517 条行程, 10 个字段
+2026-06-27 08:35:07 | INFO     | logger:80 | ============================================================
+2026-06-27 08:35:07 | INFO     | logger:80 |   时序分析
+2026-06-27 08:35:07 | INFO     | logger:80 | ============================================================
+2026-06-27 08:35:07 | INFO     | logger:80 | ============================================================
+2026-06-27 08:35:07 | INFO     | logger:80 |   空间分析
+2026-06-27 08:35:07 | INFO     | logger:80 | ============================================================
+2026-06-27 08:35:08 | INFO     | logger:80 | ============================================================
+2026-06-27 08:35:08 | INFO     | logger:80 |   可视化
+2026-06-27 08:35:08 | INFO     | logger:80 | ============================================================
+2026-06-27 08:35:10 | INFO     | logger:80 | 正在生成分析报告...
+2026-06-27 08:35:10 | INFO     | logger:80 | 分析报告已保存: D:\code_king\Data\Taxi\output\reports\analysis_report.md
+2026-06-27 08:35:10 | INFO     | logger:80 | [完成] 所有分析已完成! 总耗时: 2.73秒
+2026-06-27 08:35:10 | INFO     | logger:80 | [完成] 图表输出目录: D:\code_king\Data\Taxi\output\figures
+2026-06-27 08:35:10 | INFO     | logger:80 | [完成] 报告输出目录: D:\code_king\Data\Taxi\output\reports
+2026-06-27 08:35:10 | INFO     | logger:80 | [完成] 日志文件: D:\code_king\Data\Taxi\log\taxi_analysis_20260627.log
+2026-06-27 08:37:06 | INFO     | logger:80 | ============================================================
+2026-06-27 08:37:06 | INFO     | logger:80 |   模式: 数据分析
+2026-06-27 08:37:06 | INFO     | logger:80 | ============================================================
+2026-06-27 08:37:06 | INFO     | logger:80 | 分析数据: 8,517 条行程, 10 个字段
+2026-06-27 08:37:06 | INFO     | logger:80 | ============================================================
+2026-06-27 08:37:06 | INFO     | logger:80 |   时序分析
+2026-06-27 08:37:06 | INFO     | logger:80 | ============================================================
+2026-06-27 08:37:06 | INFO     | logger:80 | ============================================================
+2026-06-27 08:37:06 | INFO     | logger:80 |   空间分析
+2026-06-27 08:37:06 | INFO     | logger:80 | ============================================================
+2026-06-27 08:37:06 | ERROR    | logger:86 | 数据分析失败: No module named 'sklearn'
+2026-06-27 08:37:06 | ERROR    | logger:86 | Traceback (most recent call last):
+  File "D:\code_king\Data\Taxi\main.py", line 112, in run_analysis
+    spatial.find_hotspots("start")
+  File "D:\code_king\Data\Taxi\src\spatial_analysis.py", line 272, in find_hotspots
+    from sklearn.cluster import DBSCAN
+ModuleNotFoundError: No module named 'sklearn'
+
+2026-06-27 08:39:01 | INFO     | logger:80 | ============================================================
+2026-06-27 08:39:01 | INFO     | logger:80 |   模式: 数据分析
+2026-06-27 08:39:01 | INFO     | logger:80 | ============================================================
+2026-06-27 08:39:01 | INFO     | logger:80 | 分析数据: 8,517 条行程, 10 个字段
+2026-06-27 08:39:01 | INFO     | logger:80 | ============================================================
+2026-06-27 08:39:01 | INFO     | logger:80 |   时序分析
+2026-06-27 08:39:01 | INFO     | logger:80 | ============================================================
+2026-06-27 08:39:02 | INFO     | logger:80 | ============================================================
+2026-06-27 08:39:02 | INFO     | logger:80 |   空间分析
+2026-06-27 08:39:02 | INFO     | logger:80 | ============================================================
+2026-06-27 08:39:02 | INFO     | logger:80 | ============================================================
+2026-06-27 08:39:02 | INFO     | logger:80 |   可视化
+2026-06-27 08:39:02 | INFO     | logger:80 | ============================================================
+2026-06-27 08:39:04 | INFO     | logger:80 | 正在生成分析报告...
+2026-06-27 08:39:04 | INFO     | logger:80 | 分析报告已保存: d:\code_king\Data\Taxi\output\reports\analysis_report.md
+2026-06-27 08:39:04 | INFO     | logger:80 | [完成] 所有分析已完成! 总耗时: 2.81秒
+2026-06-27 08:39:04 | INFO     | logger:80 | [完成] 图表输出目录: d:\code_king\Data\Taxi\output\figures
+2026-06-27 08:39:04 | INFO     | logger:80 | [完成] 报告输出目录: d:\code_king\Data\Taxi\output\reports
+2026-06-27 08:39:04 | INFO     | logger:80 | [完成] 日志文件: d:\code_king\Data\Taxi\log\taxi_analysis_20260627.log

@@ -24,19 +24,33 @@ class TemporalAnalyzer:
         df : pd.DataFrame
             清洗后的OD数据 (含 VehicleNum, Stime, SLng, SLat, ELng, ELat, Etime)
         """
-        self.df = df
+        self.df = df.copy() if df is not None else None
         self.hourly_stats = None   # 小时级统计
         self.peak_info = None      # 高峰识别结果
+        self._preprocessed = False # 预处理标记
+
+        # 自动执行预处理
+        if self.df is not None:
+            self._preprocess()
 
     def load_data(self, df: pd.DataFrame):
-        """加载OD数据"""
+        """加载OD数据并自动预处理"""
         self.df = df.copy()
+        self._preprocessed = False
+        self.hourly_stats = None
+        self.peak_info = None
         self._preprocess()
 
     def _preprocess(self):
-        """数据预处理：添加时间相关字段"""
+        """
+        数据预处理：添加时间相关字段、计算行程时长和距离
+
+        幂等性: 如果已经预处理过，跳过重复计算
+        """
         if self.df is None:
             raise ValueError("请先加载数据")
+        if self._preprocessed:
+            return  # 幂等性检查: 避免重复计算
 
         # 解析时间
         self.df["stime_dt"] = pd.to_datetime(self.df["Stime"], format="%H:%M:%S")
@@ -49,16 +63,20 @@ class TemporalAnalyzer:
         # 提取小时
         self.df["hour"] = self.df["stime_dt"].dt.hour
 
-        # 计算行程时长（分钟）
-        self.df["duration_min"] = (
-            (self.df["etime_dt"] - self.df["stime_dt"]).dt.total_seconds() / 60
-        )
+        # 计算行程时长（分钟）— 如果清洗阶段已计算则跳过
+        if "duration_min" not in self.df.columns:
+            self.df["duration_min"] = (
+                (self.df["etime_dt"] - self.df["stime_dt"]).dt.total_seconds() / 60
+            )
 
-        # 计算行程距离（公里） - 使用简化的欧氏距离近似
-        self.df["distance_km"] = self._approx_distance(
-            self.df["SLng"], self.df["SLat"],
-            self.df["ELng"], self.df["ELat"]
-        )
+        # 计算行程距离（公里）— 如果清洗阶段已计算则跳过
+        if "distance_km" not in self.df.columns:
+            self.df["distance_km"] = self._approx_distance(
+                self.df["SLng"], self.df["SLat"],
+                self.df["ELng"], self.df["ELat"]
+            )
+
+        self._preprocessed = True
 
     # ----------------------------------------------------------
     # 小时出行量分布

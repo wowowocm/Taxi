@@ -18,10 +18,43 @@ import matplotlib
 matplotlib.use("Agg")  # 非交互后端
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
+from matplotlib import font_manager
 from .config import (
     FIGURES_DIR, MAP_CENTER, MAP_DEFAULT_ZOOM,
     CHART_STYLE, TIME_PERIODS,
 )
+
+# --- 中文字体配置 ---
+# 优先级: 拷贝 SimHei 到 mpl fonts 目录 → 重建缓存
+_CHINESE_FONT_PATHS = [
+    "C:/Windows/Fonts/simhei.ttf",
+    "C:/Windows/Fonts/msyh.ttc",
+    "/System/Library/Fonts/STHeiti Light.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+]
+
+_font_found = False
+_mpl_fonts_dir = os.path.join(matplotlib.get_data_path(), "fonts", "ttf")
+
+for _fp in _CHINESE_FONT_PATHS:
+    if os.path.exists(_fp):
+        # 拷贝到 matplotlib fonts 目录（如果尚未拷贝）
+        _dest = os.path.join(_mpl_fonts_dir, os.path.basename(_fp))
+        if not os.path.exists(_dest):
+            import shutil
+            shutil.copy(_fp, _dest)
+        # 重建字体管理器缓存
+        font_manager._load_fontmanager(try_read_cache=False)
+        # 设置字体
+        _font_prop = font_manager.FontProperties(fname=_fp)
+        _font_name = _font_prop.get_name()
+        CHART_STYLE["font.sans-serif"] = [_font_name, "DejaVu Sans"]
+        _font_found = True
+        break
+
+if not _font_found:
+    print("[WARN] 未找到中文字体文件，图表中文可能无法正常显示")
 
 # 应用全局样式
 plt.rcParams.update(CHART_STYLE)
@@ -172,12 +205,13 @@ class Visualizer:
             end_h = int(end.split(":")[0])
             if end_h <= start_h:  # 夜间跨日
                 end_h += 24
-            colors = {"早高峰": "rgba(255,152,0,0.08)",
-                      "日间平峰": "rgba(76,175,80,0.05)",
-                      "晚高峰": "rgba(255,87,34,0.08)",
-                      "夜间": "rgba(63,81,181,0.05)"}
+            # matplotlib 3.7 格式: (R, G, B, A) 元组，值域 [0, 1]
+            colors = {"早高峰": (1.0, 0.60, 0.0, 0.08),
+                      "日间平峰": (0.30, 0.69, 0.31, 0.05),
+                      "晚高峰": (1.0, 0.34, 0.13, 0.08),
+                      "夜间": (0.25, 0.32, 0.71, 0.05)}
             ax.axvspan(start_h, end_h, color=colors.get(period_name, "none"),
-                       alpha=0.5, label=period_name)
+                       label=period_name)
 
         ax.set_xlabel("小时 (Hour)", fontsize=12)
         ax.set_ylabel("出行量 (次)", fontsize=12)
@@ -267,7 +301,6 @@ class Visualizer:
         """
         ax2.text(0.1, 0.95, stats_text, transform=ax2.transAxes,
                  fontsize=10, verticalalignment="top",
-                 fontfamily="monospace",
                  bbox=dict(boxstyle="round", facecolor="lightyellow", alpha=0.8))
 
         plt.tight_layout()
