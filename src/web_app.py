@@ -610,31 +610,83 @@ def api_realtime_dashboard():
 
 
 def _get_lan_ip():
-    """获取本机局域网 IPv4 地址列表"""
+    """获取本机局域网 IPv4 地址列表 (自动排除 VMware/VPN/Radmin 等虚拟网卡)"""
     import socket
+    import subprocess
+    import re
+    import platform
     ips = []
+
+    # 虚拟网卡关键词 (不区分大小写匹配)
+    VIRTUAL_KEYWORDS = [
+        'vmware', 'virtualbox', 'hyper-v', 'vethernet',
+        'wsl', 'virtual', 'tap-', 'radmin', 'vpn',
+        'loopback', 'bluetooth', 'teredo', 'tunnel',
+    ]
+
     try:
-        hostname = socket.gethostname()
-        # 获取所有IP
-        for info in socket.getaddrinfo(hostname, None, socket.AF_INET):
-            ip = info[4][0]
-            # 过滤回环地址和虚拟网卡地址
-            if (not ip.startswith('127.') and
-                not ip.startswith('169.254.') and  # APIPA 自动配置
-                ip != '0.0.0.0'):
-                # 优先保留常见的局域网段
-                if ip.startswith('192.168.') or ip.startswith('10.') or ip.startswith('172.'):
+        if platform.system() == 'Windows':
+            # Windows: PowerShell 输出结构化数据，原生 UTF-8
+            ps_cmd = (
+                'Get-NetIPAddress -AddressFamily IPv4 | '
+                'Select-Object IPAddress, InterfaceAlias | '
+                'ConvertTo-Csv -NoTypeInformation'
+            )
+            result = subprocess.run(
+                ['powershell', '-NoProfile', '-Command', ps_cmd],
+                capture_output=True, text=True, encoding='utf-8', errors='replace'
+            )
+            for line in result.stdout.split('\n'):
+                line = line.strip().strip('"')
+                if not line or 'IPAddress' in line or not re.search(r'\d\.', line):
+                    continue
+                # 格式: "IP","InterfaceAlias"
+                parts = [p.strip('"') for p in line.split('","')]
+                if len(parts) >= 2:
+                    ip, alias = parts[0], parts[1]
+                    is_virtual = any(kw in alias.lower() for kw in VIRTUAL_KEYWORDS)
+                    if (not is_virtual and
+                        not ip.startswith('127.') and
+                        not ip.startswith('169.254.')):
+                        if ip not in ips:
+                            ips.append(ip)
+        else:
+            # Linux/Mac: 用 ip addr
+            try:
+                result = subprocess.run(
+                    ['ip', '-4', 'addr', 'show'],
+                    capture_output=True, text=True
+                )
+                for line in result.stdout.split('\n'):
+                    if 'inet ' in line and '127.0.0.1' not in line:
+                        m = re.search(
+                            r'inet (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', line
+                        )
+                        if m and not m.group(1).startswith('169.254.'):
+                            ips.append(m.group(1))
+            except Exception:
+                pass
+
+        # 回退: 标准 socket 方法 (无法区分虚拟网卡，但至少给个 IP)
+        if not ips:
+            hostname = socket.gethostname()
+            for info in socket.getaddrinfo(hostname, None, socket.AF_INET):
+                ip = info[4][0]
+                if (not ip.startswith('127.') and
+                    not ip.startswith('169.254.') and
+                    ip != '0.0.0.0'):
                     if ip not in ips:
                         ips.append(ip)
+
     except Exception:
         pass
 
-    # 备选方案：尝试连接外部地址获取本机IP
+    # 最后备选: UDP 探测获取实际路由出口 IP
     if not ips:
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.settimeout(0.5)
-            s.connect(('192.168.116.128', 1))  # 连接MySQL虚拟机
+            s.connect(('8.8.8.8', 53))
             ip = s.getsockname()[0]
             s.close()
             if ip and not ip.startswith('127.') and ip not in ips:

@@ -263,32 +263,83 @@ def generate_report(temporal, spatial, efficiency):
 
 
 def _get_lan_ips():
-    """获取本机局域网 IPv4 地址列表"""
+    """获取本机局域网 IPv4 地址列表 (自动排除 VMware/VPN/Radmin 等虚拟网卡)"""
     import socket
+    import subprocess
+    import re
+    import platform
     ips = []
+
+    VIRTUAL_KEYWORDS = [
+        'vmware', 'virtualbox', 'hyper-v', 'vethernet',
+        'wsl', 'virtual', 'tap-', 'radmin', 'vpn',
+        'loopback', 'bluetooth', 'teredo', 'tunnel',
+    ]
+
     try:
-        hostname = socket.gethostname()
-        for info in socket.getaddrinfo(hostname, None, socket.AF_INET):
-            ip = info[4][0]
-            if (not ip.startswith('127.') and
-                not ip.startswith('169.254.') and
-                ip != '0.0.0.0'):
-                if ip.startswith('192.168.') or ip.startswith('10.') or ip.startswith('172.'):
+        if platform.system() == 'Windows':
+            ps_cmd = (
+                'Get-NetIPAddress -AddressFamily IPv4 | '
+                'Select-Object IPAddress, InterfaceAlias | '
+                'ConvertTo-Csv -NoTypeInformation'
+            )
+            result = subprocess.run(
+                ['powershell', '-NoProfile', '-Command', ps_cmd],
+                capture_output=True, text=True, encoding='utf-8', errors='replace'
+            )
+            for line in result.stdout.split('\n'):
+                line = line.strip().strip('"')
+                if not line or 'IPAddress' in line or not re.search(r'\d\.', line):
+                    continue
+                parts = [p.strip('"') for p in line.split('","')]
+                if len(parts) >= 2:
+                    ip, alias = parts[0], parts[1]
+                    is_virtual = any(kw in alias.lower() for kw in VIRTUAL_KEYWORDS)
+                    if (not is_virtual and
+                        not ip.startswith('127.') and
+                        not ip.startswith('169.254.')):
+                        if ip not in ips:
+                            ips.append(ip)
+        else:
+            try:
+                result = subprocess.run(
+                    ['ip', '-4', 'addr', 'show'],
+                    capture_output=True, text=True
+                )
+                for line in result.stdout.split('\n'):
+                    if 'inet ' in line and '127.0.0.1' not in line:
+                        m = re.search(
+                            r'inet (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', line
+                        )
+                        if m and not m.group(1).startswith('169.254.'):
+                            ips.append(m.group(1))
+            except Exception:
+                pass
+
+        if not ips:
+            hostname = socket.gethostname()
+            for info in socket.getaddrinfo(hostname, None, socket.AF_INET):
+                ip = info[4][0]
+                if (not ip.startswith('127.') and
+                    not ip.startswith('169.254.') and
+                    ip != '0.0.0.0'):
                     if ip not in ips:
                         ips.append(ip)
     except Exception:
         pass
+
     if not ips:
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.settimeout(0.5)
-            s.connect(('192.168.116.128', 1))
+            s.connect(('8.8.8.8', 53))
             ip = s.getsockname()[0]
             s.close()
             if ip and not ip.startswith('127.') and ip not in ips:
                 ips.append(ip)
         except Exception:
             pass
+
     return ips
 
 
