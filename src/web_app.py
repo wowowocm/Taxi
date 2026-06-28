@@ -388,6 +388,228 @@ def health():
 
 
 # ================================================================
+# 实时大屏 API (MySQL数据源)
+# ================================================================
+
+import pymysql
+import json
+
+
+def _get_mysql_conn():
+    """获取MySQL连接"""
+    from src.config import MYSQL_CONFIG
+    return pymysql.connect(
+        host=MYSQL_CONFIG["host"],
+        port=MYSQL_CONFIG["port"],
+        user=MYSQL_CONFIG["user"],
+        password=MYSQL_CONFIG["password"],
+        database=MYSQL_CONFIG["database"],
+        charset=MYSQL_CONFIG["charset"],
+    )
+
+
+@app.route("/realtime")
+def realtime():
+    """实时运行态势大屏"""
+    return render_template("realtime.html")
+
+
+@app.route("/api/realtime/kpis")
+def api_realtime_kpis():
+    """实时KPI指标 — 从MySQL读取"""
+    try:
+        conn = _get_mysql_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT extra_info FROM realtime_stats WHERE stat_type='kpi_summary' AND stat_key='all'"
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        if row:
+            return jsonify(json.loads(row[0]))
+        return jsonify({})
+    except Exception as e:
+        log.error(f"实时KPI查询失败: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/realtime/heatmap")
+def api_realtime_heatmap():
+    """热力图数据 — 从MySQL读取"""
+    try:
+        conn = _get_mysql_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT extra_info FROM realtime_stats WHERE stat_type='heatmap_data' AND stat_key='all'"
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        if row:
+            data = json.loads(row[0])
+            return jsonify({"data": data})
+        return jsonify({"data": []})
+    except Exception as e:
+        log.error(f"热力图查询失败: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/realtime/ranking")
+def api_realtime_ranking():
+    """上车热点排行 — 从MySQL读取"""
+    try:
+        conn = _get_mysql_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT extra_info FROM realtime_stats WHERE stat_type='hotspot_ranking' AND stat_key='top15'"
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        if row:
+            data = json.loads(row[0])
+            return jsonify({"ranking": data})
+        return jsonify({"ranking": []})
+    except Exception as e:
+        log.error(f"排行查询失败: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/realtime/trend")
+def api_realtime_trend():
+    """趋势数据 — 从MySQL读取"""
+    try:
+        conn = _get_mysql_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT extra_info FROM realtime_stats WHERE stat_type='trend_data' AND stat_key='hourly'"
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        if row:
+            return jsonify(json.loads(row[0]))
+        return jsonify({})
+    except Exception as e:
+        log.error(f"趋势查询失败: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/realtime/period")
+def api_realtime_period():
+    """时段对比数据"""
+    try:
+        conn = _get_mysql_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT stat_key, stat_value FROM realtime_stats WHERE stat_type='period_trips' ORDER BY id"
+        )
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        labels, values = [], []
+        for r in rows:
+            labels.append(r[0])
+            values.append(int(r[1]))
+        return jsonify({"labels": labels, "values": values})
+    except Exception as e:
+        log.error(f"时段查询失败: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/realtime/hourly")
+def api_realtime_hourly():
+    """24小时出行量分布"""
+    try:
+        conn = _get_mysql_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT stat_key, stat_value FROM realtime_stats WHERE stat_type='hourly_trips' ORDER BY stat_key"
+        )
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        hours, values = [], []
+        for r in rows:
+            hours.append(r[0])
+            values.append(int(r[1]))
+        return jsonify({"hours": hours, "values": values})
+    except Exception as e:
+        log.error(f"24小时查询失败: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/realtime/dashboard")
+def api_realtime_dashboard():
+    """聚合所有实时数据"""
+    try:
+        conn = _get_mysql_conn()
+        cursor = conn.cursor()
+
+        result = {}
+
+        # KPI
+        cursor.execute(
+            "SELECT extra_info FROM realtime_stats WHERE stat_type='kpi_summary' AND stat_key='all'"
+        )
+        row = cursor.fetchone()
+        if row:
+            result["kpis"] = json.loads(row[0])
+
+        # 热力图
+        cursor.execute(
+            "SELECT extra_info FROM realtime_stats WHERE stat_type='heatmap_data' AND stat_key='all'"
+        )
+        row = cursor.fetchone()
+        if row:
+            result["heatmap"] = json.loads(row[0])
+
+        # 排行
+        cursor.execute(
+            "SELECT extra_info FROM realtime_stats WHERE stat_type='hotspot_ranking' AND stat_key='top15'"
+        )
+        row = cursor.fetchone()
+        if row:
+            result["ranking"] = json.loads(row[0])
+
+        # 趋势
+        cursor.execute(
+            "SELECT extra_info FROM realtime_stats WHERE stat_type='trend_data' AND stat_key='hourly'"
+        )
+        row = cursor.fetchone()
+        if row:
+            result["trend"] = json.loads(row[0])
+
+        # 时段
+        cursor.execute(
+            "SELECT stat_key, stat_value FROM realtime_stats WHERE stat_type='period_trips' ORDER BY id"
+        )
+        rows = cursor.fetchall()
+        result["period"] = {
+            "labels": [r[0] for r in rows],
+            "values": [int(r[1]) for r in rows],
+        }
+
+        # 24小时
+        cursor.execute(
+            "SELECT stat_key, stat_value FROM realtime_stats WHERE stat_type='hourly_trips' ORDER BY stat_key"
+        )
+        rows = cursor.fetchall()
+        result["hourly"] = {
+            "hours": [r[0] for r in rows],
+            "values": [int(r[1]) for r in rows],
+        }
+
+        cursor.close()
+        conn.close()
+        return jsonify(result)
+    except Exception as e:
+        log.error(f"聚合查询失败: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ================================================================
 # 启动
 # ================================================================
 if __name__ == "__main__":

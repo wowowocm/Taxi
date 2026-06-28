@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>深圳出租车实时运行态势 — 大数据可视化大屏</title>
+
+    <!-- Leaflet CSS + 热力图插件 -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/realtime.css') }}">
+
+    <!-- ECharts -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Leaflet.Heat -->
+    <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+</head>
+<body>
+
+    <!-- =============================================================== -->
+    <!-- 全屏大屏容器 -->
+    <!-- =============================================================== -->
+    <div class="dashboard-container">
+
+        <!-- ===== 顶部标题栏 ===== -->
+        <header class="header-top">
+            <div class="header-left-deco"></div>
+            <h1>🚕 深圳市出租车实时运行态势</h1>
+            <div class="header-right-deco"></div>
+        </header>
+
+        <!-- ===== 顶部 KPI 卡片行 ===== -->
+        <div class="kpi-strip" id="kpi-strip">
+            <div class="kpi-item">
+                <span class="kpi-icon">📊</span>
+                <div class="kpi-body">
+                    <div class="kpi-value" id="kpi-trips">--</div>
+                    <div class="kpi-label">总出行量 (次)</div>
+                </div>
+            </div>
+            <div class="kpi-item">
+                <span class="kpi-icon">🚖</span>
+                <div class="kpi-body">
+                    <div class="kpi-value" id="kpi-vehicles">--</div>
+                    <div class="kpi-label">活跃车辆 (辆)</div>
+                </div>
+            </div>
+            <div class="kpi-item">
+                <span class="kpi-icon">⏱</span>
+                <div class="kpi-body">
+                    <div class="kpi-value" id="kpi-duration">--</div>
+                    <div class="kpi-label">平均时长 (分钟)</div>
+                </div>
+            </div>
+            <div class="kpi-item">
+                <span class="kpi-icon">📏</span>
+                <div class="kpi-body">
+                    <div class="kpi-value" id="kpi-distance">--</div>
+                    <div class="kpi-label">平均距离 (km)</div>
+                </div>
+            </div>
+            <div class="kpi-item">
+                <span class="kpi-icon">⚡</span>
+                <div class="kpi-body">
+                    <div class="kpi-value" id="kpi-speed">--</div>
+                    <div class="kpi-label">平均速度 (km/h)</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== 主体三栏布局 ===== -->
+        <div class="main-content">
+
+            <!-- 左侧：排行榜 -->
+            <aside class="panel-left">
+                <div class="panel-header">
+                    <span class="panel-title-icon">🏆</span>
+                    <span class="panel-title">上车热点排行</span>
+                </div>
+                <div class="ranking-list" id="ranking-list">
+                    <div class="loading-sm">正在加载排行数据...</div>
+                </div>
+            </aside>
+
+            <!-- 中间：地图 + 热力图 -->
+            <main class="panel-center">
+                <div class="map-panel-header">
+                    <span class="badge-live">● 实时</span>
+                    <span>深圳市出租车热力分布</span>
+                </div>
+                <div id="map-container"></div>
+            </main>
+
+            <!-- 右侧：趋势图 -->
+            <aside class="panel-right">
+                <!-- 右上：24h趋势图（双Y轴） -->
+                <div class="chart-box">
+                    <div class="panel-header">
+                        <span class="panel-title-icon">📈</span>
+                        <span class="panel-title">24小时出行量 &amp; 平均速度趋势</span>
+                    </div>
+                    <div class="chart-inner" id="chart-trend"></div>
+                </div>
+                <!-- 右下：时段对比图 -->
+                <div class="chart-box">
+                    <div class="panel-header">
+                        <span class="panel-title-icon">🕐</span>
+                        <span class="panel-title">各时段出行量对比</span>
+                    </div>
+                    <div class="chart-inner" id="chart-period"></div>
+                </div>
+            </aside>
+
+        </div>
+
+        <!-- ===== 底部信息条 ===== -->
+        <footer class="footer-bar">
+            <div class="footer-item">
+                <span>数据源: MySQL @ 192.168.116.128</span>
+            </div>
+            <div class="footer-item">
+                <span id="clock">--</span>
+            </div>
+            <div class="footer-item">
+                <span>深圳出租车GPS轨迹数据 | 城市出行数据分析项目组 © 2026</span>
+            </div>
+        </footer>
+    </div>
+
+    <!-- JS 逻辑 -->
+    <script src="{{ url_for('static', filename='js/core/api.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/core/chart-manager.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/realtime.js') }}"></script>
+</body>
+</html>

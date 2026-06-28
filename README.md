@@ -136,7 +136,8 @@ python main.py --report
 
 | 端点 | 说明 |
 |:---|:---|
-| `/` | Jinja2 模板渲染主页 |
+| `/realtime` | 🖥 实时大屏 | 暗黑科幻风全屏实时运行态势 |
+| `/` | Jinja2 模板渲染主页 | 原始分析看板 |
 | `/api/kpis` | 5项 KPI 卡片 |
 | `/api/hourly` | 24h 出行量 |
 | `/api/duration` | 时长分布（7段） |
@@ -219,6 +220,7 @@ python main.py --report
 
 | 日期 | 说明 | 详情 |
 |:---|:---|:---|
+| 2026-06-28 | 🖥 实时运行态势大屏 | MySQL数据源 + 暗黑科幻大屏 + Leaflet热力图 + 双Y轴趋势 | [log](log/update_20260628_realtime_dashboard.md) |
 | 2026-06-27 | 🗺 深圳地图 OD 流向图 | 桑基图 → Geo+Graph 深圳行政区地图流向图 | [log](log/update_20260627_geo_od_map.md) |
 | 2026-06-27 | 🔧 Flask 启动修复 | main.py 添加 venv 自动检测转发 | [log](log/fix_20260627_flask_sankey.md) |
 | 2026-06-27 | 🌐 Web 平台化重构 | Jinja2 模板 + 静态文件分离 + 10个API | [log](log/update_20260627_web.md) |
