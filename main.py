@@ -262,6 +262,36 @@ def generate_report(temporal, spatial, efficiency):
     log.info(f"分析报告已保存: {report_path}")
 
 
+def _get_lan_ips():
+    """获取本机局域网 IPv4 地址列表"""
+    import socket
+    ips = []
+    try:
+        hostname = socket.gethostname()
+        for info in socket.getaddrinfo(hostname, None, socket.AF_INET):
+            ip = info[4][0]
+            if (not ip.startswith('127.') and
+                not ip.startswith('169.254.') and
+                ip != '0.0.0.0'):
+                if ip.startswith('192.168.') or ip.startswith('10.') or ip.startswith('172.'):
+                    if ip not in ips:
+                        ips.append(ip)
+    except Exception:
+        pass
+    if not ips:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.settimeout(0.5)
+            s.connect(('192.168.116.128', 1))
+            ip = s.getsockname()[0]
+            s.close()
+            if ip and not ip.startswith('127.') and ip not in ips:
+                ips.append(ip)
+        except Exception:
+            pass
+    return ips
+
+
 def run_web():
     """启动Web看板"""
     # 检查 Flask 是否可用，不可用则尝试自动切换到项目 venv
@@ -282,7 +312,19 @@ def run_web():
     log.info("正在初始化数据...")
     init_data()
 
-    log.info(f"打开浏览器访问: http://localhost:{FLASK_PORT}")
+    # 显示本机访问地址
+    log.info(f"本机访问: http://localhost:{FLASK_PORT}")
+    log.info(f"实时大屏: http://localhost:{FLASK_PORT}/realtime")
+
+    # 显示局域网访问地址
+    lan_ips = _get_lan_ips()
+    if lan_ips:
+        log.info("--- 局域网访问地址 (同局域网设备) ---")
+        for ip in lan_ips:
+            log.info(f"  http://{ip}:{FLASK_PORT}/         (分析看板)")
+            log.info(f"  http://{ip}:{FLASK_PORT}/realtime  (实时大屏)")
+    else:
+        log.info("⚠ 未检测到局域网IP，仅限本机访问")
     log.info(f"日志文件: {log.get_log_file()}")
     app.run(host=FLASK_HOST, port=FLASK_PORT, debug=FLASK_DEBUG)
 

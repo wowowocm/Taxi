@@ -609,20 +609,67 @@ def api_realtime_dashboard():
         return jsonify({"error": str(e)}), 500
 
 
+def _get_lan_ip():
+    """获取本机局域网 IPv4 地址列表"""
+    import socket
+    ips = []
+    try:
+        hostname = socket.gethostname()
+        # 获取所有IP
+        for info in socket.getaddrinfo(hostname, None, socket.AF_INET):
+            ip = info[4][0]
+            # 过滤回环地址和虚拟网卡地址
+            if (not ip.startswith('127.') and
+                not ip.startswith('169.254.') and  # APIPA 自动配置
+                ip != '0.0.0.0'):
+                # 优先保留常见的局域网段
+                if ip.startswith('192.168.') or ip.startswith('10.') or ip.startswith('172.'):
+                    if ip not in ips:
+                        ips.append(ip)
+    except Exception:
+        pass
+
+    # 备选方案：尝试连接外部地址获取本机IP
+    if not ips:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.settimeout(0.5)
+            s.connect(('192.168.116.128', 1))  # 连接MySQL虚拟机
+            ip = s.getsockname()[0]
+            s.close()
+            if ip and not ip.startswith('127.') and ip not in ips:
+                ips.append(ip)
+        except Exception:
+            pass
+
+    return ips
+
+
 # ================================================================
 # 启动
 # ================================================================
 if __name__ == "__main__":
-    print("=" * 55)
+    print("=" * 60)
     print("  城市出行数据分析系统 - Flask Web 服务")
-    print("  shine 主题 | ECharts 5.5 | 9 张交互图表")
-    print("=" * 55)
+    print("  shine 主题 | ECharts 5.5 | Leaflet 地图 | MySQL 数据源")
+    print("=" * 60)
 
     # 预加载数据
     init_data()
 
-    print(f"\n[INFO] 服务地址: http://{FLASK_HOST}:{FLASK_PORT}")
-    print(f"[INFO] 本地访问: http://localhost:{FLASK_PORT}")
+    # 显示访问地址
+    lan_ips = _get_lan_ip()
+    print(f"\n  📡 访问地址:")
+    print(f"  ├─ 本机访问: http://localhost:{FLASK_PORT}")
+    print(f"  ├─ 分析看板: http://localhost:{FLASK_PORT}/")
+    print(f"  └─ 实时大屏: http://localhost:{FLASK_PORT}/realtime")
+    if lan_ips:
+        print(f"\n  🌐 局域网访问 (同局域网设备):")
+        for ip in lan_ips:
+            print(f"  ├─ http://{ip}:{FLASK_PORT}/        (分析看板)")
+            print(f"  └─ http://{ip}:{FLASK_PORT}/realtime (实时大屏)")
+    else:
+        print(f"\n  ⚠️  未检测到局域网IP，仅限本机访问")
     print()
 
     app.run(
