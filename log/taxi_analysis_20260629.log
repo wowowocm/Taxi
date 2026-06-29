@@ -651,3 +651,13 @@ pymysql.err.OperationalError: (1054, "Unknown column 'VehicleNum' in 'field list
 2026-06-29 10:41:25 | INFO     | logger:80 |   http://10.32.40.161:5000/realtime  (实时大屏)
 2026-06-29 10:41:25 | INFO     | logger:80 | 日志文件: D:\code_king\Data\Taxi\log\taxi_analysis_20260629.log
 2026-06-29 10:43:42 | INFO     | logger:80 | OD流向图数据: 29 节点, 25 边 (来自 30 个OD对)
+2026-06-29 10:44:23 | INFO     | logger:80 | OD流向图数据: 29 节点, 25 边 (来自 30 个OD对)
+2026-06-29 10:44:23 | INFO     | logger:80 | OD流向图API: nodes=29, edges=25
+2026-06-29 10:44:35 | WARNING  | logger:83 | cryptography 包未安装，尝试使用 mysql_native_password 认证。
+  建议运行: pip install cryptography
+2026-06-29 10:44:43 | INFO     | logger:80 | OD流向图数据: 29 节点, 25 边 (来自 30 个OD对)
+2026-06-29 10:44:43 | INFO     | logger:80 | OD流向图API: nodes=29, edges=25
+2026-06-29 10:45:04 | INFO     | logger:80 | OD流向图数据: 29 节点, 25 边 (来自 30 个OD对)
+2026-06-29 10:45:04 | INFO     | logger:80 | OD流向图API: nodes=29, edges=25
+2026-06-29 10:45:08 | INFO     | logger:80 | OD流向图数据: 29 节点, 25 边 (来自 30 个OD对)
+2026-06-29 10:45:08 | INFO     | logger:80 | OD流向图API: nodes=29, edges=25
