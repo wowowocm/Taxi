@@ -32,7 +32,7 @@ class DataLoader:
     # ----------------------------------------------------------
     # 数据导入
     # ----------------------------------------------------------
-    def load_raw_data(self, filepath: str = None) -> pd.DataFrame:
+    def load_raw_data(self, filepath: str = None, use_spark: bool = False) -> pd.DataFrame:
         """
         导入原始GPS轨迹数据
 
@@ -40,11 +40,12 @@ class DataLoader:
         ----------
         filepath : str, optional
             数据文件路径，默认使用配置中的路径
+        use_spark : bool
+            是否使用 PySpark 加载 (大数据量时更快)
 
         Returns
         -------
         pd.DataFrame
-            包含 VehicleNum, Stime, Lng, Lat, OpenStatus, Speed 的DataFrame
         """
         path = filepath or RAW_DATA_PATH
         if not os.path.exists(path):
@@ -54,14 +55,22 @@ class DataLoader:
         log.info(f"正在加载原始GPS数据: {path}")
         start = time.time()
 
-        # 自动检测编码
+        # 尝试 PySpark 加载
+        if use_spark:
+            from .spark_manager import load_csv_to_spark, spark_to_pandas
+            sdf, spark = load_csv_to_spark(path)
+            if sdf is not None:
+                self.raw_df = spark_to_pandas(sdf)
+                elapsed = time.time() - start
+                log.info(f"PySpark数据加载完成! 耗时: {elapsed:.2f}秒")
+                log.info(f"记录数: {len(self.raw_df):,}, 字段数: {len(self.raw_df.columns)}")
+                return self.raw_df
+
+        # Pandas 加载
         encoding = self._detect_encoding(path)
         log.info(f"检测到文件编码: {encoding}")
 
-        # 读取CSV
         self.raw_df = pd.read_csv(path, encoding=encoding)
-
-        # 统一列名（去除可能存在的空格）
         self.raw_df.columns = self.raw_df.columns.str.strip()
 
         elapsed = time.time() - start

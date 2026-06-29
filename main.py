@@ -3,8 +3,11 @@
 项目主入口文件
 支持多种运行模式:
   - 命令行模式: python main.py
+  - PySpark模式: python main.py --spark        (使用VM Spark集群计算)
   - Web看板模式: python main.py --web
   - 数据清洗模式: python main.py --clean
+  - MySQL上传:   python main.py --upload        (上传分析结果到MySQL)
+  - 一键全流程:  python main.py --spark --upload  (清洗→分析→上传)
   - 分析报告模式: python main.py --report
 """
 
@@ -23,7 +26,6 @@ def _find_venv_python():
     """
     自动检测可用的虚拟环境 Python 解释器。
     优先查找 .venv_py38 (Python 3.8.10)，其次 .venv。
-    返回 (python_exe_path, venv_name) 或 (None, None)。
     """
     candidates = [
         (".venv_py38", "Python 3.8.10"),
@@ -40,14 +42,11 @@ def _find_venv_python():
 
 
 def _relaunch_with_venv():
-    """
-    如果当前 Python 缺少 Flask，自动查找并使用项目虚拟环境重新启动。
-    """
+    """如果当前 Python 缺少 Flask，自动查找并使用项目虚拟环境重新启动。"""
     venv_exe, venv_name = _find_venv_python()
     if venv_exe is None:
         return False
 
-    # 检查 venv 中是否有 Flask
     import subprocess
     try:
         result = subprocess.run(
@@ -59,14 +58,13 @@ def _relaunch_with_venv():
     except Exception:
         return False
 
-    # 重新以 venv Python 执行当前脚本，传递相同参数
     print(f"[INFO] 检测到虚拟环境: {venv_name}")
     print(f"[INFO] 重新启动: {venv_exe} {' '.join(sys.argv)}")
     print()
     sys.stdout.flush()
-    # 使用 subprocess.call 替代 os.execv (Windows 兼容性更好)
     sys.exit(subprocess.call([venv_exe] + sys.argv))
-    return True  # 不会执行到这里
+    return True
+
 
 from src.config import RAW_DATA_PATH, CLEANED_DATA_PATH, FIGURES_DIR, REPORTS_DIR, LOG_DIR
 from src.logger import setup_logger, get_logger
@@ -80,6 +78,9 @@ from src.visualization import Visualizer
 os.makedirs(LOG_DIR, exist_ok=True)
 log = setup_logger("taxi_analysis")
 
+# 全局变量
+_spark_started = False
+
 
 def ensure_dirs():
     """确保必要的目录存在"""
@@ -87,13 +88,61 @@ def ensure_dirs():
         os.makedirs(d, exist_ok=True)
 
 
-def run_data_cleaning():
+def init_spark():
+    """初始化 PySpark 会话 (连接 VM 或本地)"""
+    global _spark_started
+    if _spark_started:
+        return True
+
+    from src.spark_manager import get_spark, is_spark_available
+
+    spark = get_spark()
+    if spark is not None:
+        _spark_started = True
+        log.info(f"PySpark 已就绪 (模式: {spark.sparkContext.master})")
+        return True
+    else:
+        log.warning("PySpark 不可用，将使用 Pandas 处理")
+        return False
+
+
+def upload_to_mysql(cleaned_df=None, hourly_df=None, period_df=None,
+                    hotspots_df=None, efficiency_df=None, flow_df=None,
+                    kpis=None):
+    """上传分析结果到 MySQL (CentOS VM)"""
+    from src.mysql_uploader import MySQLUploader
+
+    log.section("MySQL 上传")
+    uploader = MySQLUploader()
+    try:
+        uploader.upload_all(
+            cleaned_df=cleaned_df,
+            hourly_df=hourly_df,
+            period_df=period_df,
+            hotspots_df=hotspots_df,
+            efficiency_df=efficiency_df,
+            flow_df=flow_df,
+            kpis=kpis,
+        )
+        log.info("MySQL 上传成功!")
+        return True
+    except Exception as e:
+        log.error(f"MySQL 上传失败: {e}")
+        log.error(traceback.format_exc())
+        return False
+
+
+def run_data_cleaning(use_spark=False, upload=False):
     """执行数据清洗流水线"""
     log.section("模式: 数据清洗流水线")
     start_time = time.time()
 
+    if use_spark:
+        log.info("使用 PySpark 模式进行数据清洗")
+        init_spark()
+
     loader = DataLoader()
-    cleaner = DataCleaner()
+    cleaner = DataCleaner(use_spark=use_spark)
 
     try:
         # 加载原始数据
@@ -107,7 +156,7 @@ def run_data_cleaning():
         cleaned_df = cleaner.run_pipeline(raw_df)
         log.info(f"清洗流水线完成: {len(cleaned_df):,} 条有效行程")
 
-        # 导出到 tax_data/taxi_sz.csv (覆盖原文件)
+        # 导出到 tax_data/taxi_sz.csv
         output_path = CLEANED_DATA_PATH
         cleaner.export_cleaned_data(cleaned_df, output_path)
         log.info(f"清洗数据已导出: {output_path}")
@@ -115,6 +164,11 @@ def run_data_cleaning():
         # 打印清洗报告
         report = cleaner.get_cleaning_report()
         log.info(report)
+
+        # 上传到 MySQL (放在 try 内部以便捕获异常)
+        if upload:
+            log.info("开始上传清洗结果到 MySQL...")
+            upload_to_mysql(cleaned_df=cleaned_df)
 
     except Exception as e:
         log.error(f"数据清洗失败: {e}")
@@ -128,10 +182,14 @@ def run_data_cleaning():
     return cleaned_df
 
 
-def run_analysis(df=None):
+def run_analysis(df=None, use_spark=False, upload=False):
     """执行完整分析"""
     log.section("模式: 数据分析")
     start_time = time.time()
+
+    if use_spark:
+        log.info("使用 PySpark 模式进行数据分析")
+        init_spark()
 
     ensure_dirs()
 
@@ -147,45 +205,64 @@ def run_analysis(df=None):
 
         # 时序分析
         log.section("时序分析")
-        temporal = TemporalAnalyzer(df)
-        temporal.hourly_trip_count()
-        temporal.identify_peak_hours()
+        temporal = TemporalAnalyzer(df, use_spark=use_spark)
+        hourly_df = temporal.hourly_trip_count()
+        peak_info = temporal.identify_peak_hours()
         temporal.duration_distribution()
         temporal.distance_distribution()
-        temporal.period_analysis()
+        period_df = temporal.period_analysis()
         efficiency = temporal.vehicle_efficiency()
 
         # 空间分析
         log.section("空间分析")
-        spatial = SpatialAnalyzer(df)
+        spatial = SpatialAnalyzer(df, use_spark=use_spark)
         spatial._build_grid()
         spatial.build_od_matrix()
         spatial.find_hotspots("start")
         spatial.find_hotspots("end")
-        spatial.net_flow_analysis()
+        flow_df = spatial.net_flow_analysis()
+
+        # KPI 数据 (用于 MySQL 上传)
+        kpis = [
+            {"label": "总出行量", "value": f"{len(df):,}"},
+            {"label": "活跃车辆", "value": f"{df['VehicleNum'].nunique():,}"},
+            {"label": "平均时长", "value": f"{df['duration_min'].mean():.1f} 分钟"},
+            {"label": "高峰时段", "value": f"{int(peak_info.get('peak_hour_max', 0))}:00"},
+            {"label": "高峰出行量", "value": f"{int(peak_info.get('peak_max_trips', 0)):,}"},
+        ]
 
         # 可视化
         log.section("可视化")
         viz = Visualizer()
         viz.set_analyzers(temporal, spatial)
 
-        # 时序图表
         viz.hourly_trip_chart()
         viz.duration_histogram()
         viz.scatter_duration_distance()
 
-        # 空间图表
         density = spatial.trip_density("start")
         viz.heatmap_map(density, "出行起点热力分布", "heatmap_start.html")
 
         if spatial.hotspots is not None:
             viz.hotspot_bar_chart()
 
-        # 综合看板
         viz.create_dashboard()
 
         # 生成分析报告
         generate_report(temporal, spatial, efficiency)
+
+        # 上传到 MySQL (放在 try 内部)
+        if upload:
+            log.info("开始上传分析结果到 MySQL...")
+            upload_to_mysql(
+                cleaned_df=df,
+                hourly_df=hourly_df,
+                period_df=period_df,
+                hotspots_df=spatial.hotspots,
+                efficiency_df=efficiency,
+                flow_df=flow_df,
+                kpis=kpis,
+            )
 
     except Exception as e:
         log.error(f"数据分析失败: {e}")
@@ -200,13 +277,12 @@ def run_analysis(df=None):
 
 
 def generate_report(temporal, spatial, efficiency):
-    """生成Markdown分析报告"""
+    """生成 Markdown 分析报告"""
     log.info("正在生成分析报告...")
 
     df = temporal.df
     total_trips = len(df)
 
-    # 安全获取统计值
     avg_duration = df["duration_min"].mean() if "duration_min" in df.columns else 0
     avg_distance = df["distance_km"].mean() if "distance_km" in df.columns else 0
     short_trip_ratio = (df["distance_km"] < 3).mean() * 100 if "distance_km" in df.columns else 0
@@ -263,7 +339,7 @@ def generate_report(temporal, spatial, efficiency):
 
 
 def _get_lan_ips():
-    """获取本机局域网 IPv4 地址列表 (自动排除 VMware/VPN/Radmin 等虚拟网卡)"""
+    """获取本机局域网 IPv4 地址列表"""
     import socket
     import subprocess
     import re
@@ -344,8 +420,7 @@ def _get_lan_ips():
 
 
 def run_web():
-    """启动Web看板"""
-    # 检查 Flask 是否可用，不可用则尝试自动切换到项目 venv
+    """启动 Web 看板"""
     try:
         import flask  # noqa: F401
     except ImportError:
@@ -354,7 +429,7 @@ def run_web():
             print("  .venv_py38\\Scripts\\activate")
             print("  python main.py --web")
             sys.exit(1)
-        return  # _relaunch_with_venv 成功后不会返回
+        return
 
     from src.web_app import app, FLASK_HOST, FLASK_PORT, FLASK_DEBUG
     from src.web_app import init_data
@@ -363,11 +438,9 @@ def run_web():
     log.info("正在初始化数据...")
     init_data()
 
-    # 显示本机访问地址
     log.info(f"本机访问: http://localhost:{FLASK_PORT}")
     log.info(f"实时大屏: http://localhost:{FLASK_PORT}/realtime")
 
-    # 显示局域网访问地址
     lan_ips = _get_lan_ips()
     if lan_ips:
         log.info("--- 局域网访问地址 (同局域网设备) ---")
@@ -380,33 +453,69 @@ def run_web():
     app.run(host=FLASK_HOST, port=FLASK_PORT, debug=FLASK_DEBUG)
 
 
+def cleanup():
+    """清理资源"""
+    global _spark_started
+    if _spark_started:
+        from src.spark_manager import stop_spark
+        stop_spark()
+        _spark_started = False
+
+
 # ----------------------------------------------------------
 # 命令行入口
 # ----------------------------------------------------------
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="城市出行数据分析系统",
+        description="城市出行数据分析系统 (支持 PySpark + MySQL)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 运行示例:
-  python main.py              # 默认: 执行完整分析
-  python main.py --clean      # 仅数据清洗
-  python main.py --web        # 启动Web看板
-  python main.py --report     # 仅生成报告
+  python main.py                     # 默认: Pandas 模式执行完整分析
+  python main.py --spark             # PySpark 模式 (VM集群优先→本机→回退)
+  python main.py --spark --upload    # PySpark + 上传结果到 MySQL
+  python main.py --clean --spark     # PySpark 模式仅数据清洗
+  python main.py --upload            # 仅上传已有分析结果到 MySQL
+  python main.py --web               # 启动 Flask Web 看板
+  python main.py --report            # 仅生成分析报告
+
+VM 连接: CentOS 7 (192.168.116.128:7077 Spark, :3306 MySQL)
         """,
     )
-    parser.add_argument("--clean", action="store_true", help="仅执行数据清洗")
-    parser.add_argument("--web", action="store_true", help="启动Flask Web看板")
-    parser.add_argument("--report", action="store_true", help="仅生成分析报告")
+    parser.add_argument("--clean", action="store_true",
+                        help="仅执行数据清洗")
+    parser.add_argument("--web", action="store_true",
+                        help="启动 Flask Web 看板")
+    parser.add_argument("--report", action="store_true",
+                        help="仅生成分析报告")
+    parser.add_argument("--spark", action="store_true",
+                        help="使用 PySpark (自动连接 VM 或本地多核)")
+    parser.add_argument("--upload", action="store_true",
+                        help="上传分析结果到 MySQL (CentOS VM)")
+    parser.add_argument("--full", action="store_true",
+                        help="一键全流程: 清洗→分析→可视化→上传MySQL")
 
     args = parser.parse_args()
 
-    if args.clean:
-        run_data_cleaning()
-    elif args.web:
-        run_web()
-    elif args.report:
-        run_analysis()
-    else:
-        # 默认: 完整分析
-        run_analysis()
+    use_spark = args.spark or args.full
+    do_upload = args.upload or args.full
+
+    try:
+        if args.clean:
+            run_data_cleaning(use_spark=use_spark, upload=do_upload)
+        elif args.web:
+            run_web()
+        elif args.report:
+            run_analysis(use_spark=use_spark, upload=do_upload)
+        elif args.full:
+            # 一键全流程: 清洗 → 分析 → 上传
+            cleaned = run_data_cleaning(use_spark=use_spark, upload=False)
+            run_analysis(df=cleaned, use_spark=use_spark, upload=do_upload)
+        elif args.upload:
+            # 仅上传已有数据
+            run_analysis(use_spark=False, upload=True)
+        else:
+            # 默认: 完整分析
+            run_analysis(use_spark=use_spark, upload=do_upload)
+    finally:
+        cleanup()

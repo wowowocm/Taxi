@@ -38,11 +38,19 @@ spatial_analyzer = None
 # ================================================================
 # 初始化数据
 # ================================================================
-def init_data():
-    """预加载数据并预计算所有分析结果，确保API秒级响应"""
+def init_data(use_spark=False):
+    """预加载数据并预计算所有分析结果，确保API秒级响应
+
+    Parameters
+    ----------
+    use_spark : bool
+        是否使用 PySpark 进行分析计算 (连接VM Spark集群)
+    """
     global temporal_analyzer, spatial_analyzer
 
     log.info("正在初始化 Web 看板数据...")
+    if use_spark:
+        log.info("PySpark 模式已启用")
 
     # 加载清洗后的OD数据
     df = loader.load_cleaned_data()
@@ -50,14 +58,14 @@ def init_data():
 
     # 初始化时序分析
     log.info("初始化时序分析器...")
-    temporal_analyzer = TemporalAnalyzer(df)
+    temporal_analyzer = TemporalAnalyzer(df, use_spark=use_spark)
     temporal_analyzer.hourly_trip_count()
     temporal_analyzer.identify_peak_hours()
     log.info("时序分析器就绪")
 
     # 初始化空间分析
     log.info("初始化空间分析器...")
-    spatial_analyzer = SpatialAnalyzer(df)
+    spatial_analyzer = SpatialAnalyzer(df, use_spark=use_spark)
     spatial_analyzer._build_grid()
     spatial_analyzer.build_od_matrix()
     spatial_analyzer.find_hotspots("start")
@@ -396,15 +404,53 @@ import json
 
 
 def _get_mysql_conn():
-    """获取MySQL连接"""
+    """
+    获取 MySQL 连接
+
+    支持多种认证方式，自动处理 caching_sha2_password 认证问题。
+    如果缺少 cryptography 包，将给出明确提示。
+    """
     from src.config import MYSQL_CONFIG
-    return pymysql.connect(
-        host=MYSQL_CONFIG["host"],
-        port=MYSQL_CONFIG["port"],
-        user=MYSQL_CONFIG["user"],
-        password=MYSQL_CONFIG["password"],
-        database=MYSQL_CONFIG["database"],
-        charset=MYSQL_CONFIG["charset"],
+
+    config = MYSQL_CONFIG.copy()
+
+    # 尝试多种认证方式
+    auth_configs = [
+        {},  # 默认: 由 PyMySQL 自动协商
+    ]
+
+    # 如果 cryptography 可用，添加 caching_sha2_password 支持
+    try:
+        import cryptography  # noqa: F401
+        # cryptography 可用，默认配置即可
+    except ImportError:
+        # 尝试使用 mysql_native_password 回退
+        auth_configs.append({
+            "auth_plugin_map": {"caching_sha2_password": None},
+        })
+        log.warning(
+            "cryptography 包未安装，尝试使用 mysql_native_password 认证。\n"
+            "  建议运行: pip install cryptography"
+        )
+
+    last_error = None
+    for auth_opts in auth_configs:
+        try:
+            cfg = {**config, **auth_opts}
+            conn = pymysql.connect(**cfg)
+            return conn
+        except Exception as e:
+            last_error = e
+            continue
+
+    # 全部失败
+    raise ConnectionError(
+        f"MySQL 连接失败 ({config['host']}:{config['port']}): {last_error}\n"
+        f"  请检查:\n"
+        f"  1. CentOS VM MySQL 是否运行\n"
+        f"  2. pip install cryptography\n"
+        f"  3. 用户 '{config['user']}' 的认证插件是否为 mysql_native_password\n"
+        f"     ALTER USER '{config['user']}'@'%' IDENTIFIED WITH mysql_native_password BY '{config['password']}'"
     )
 
 
@@ -701,27 +747,43 @@ def _get_lan_ip():
 # 启动
 # ================================================================
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Flask Web 服务")
+    parser.add_argument("--spark", action="store_true", help="使用 PySpark 分析引擎")
+    args, _ = parser.parse_known_args()
+
     print("=" * 60)
-    print("  城市出行数据分析系统 - Flask Web 服务")
+    mode_label = "PySpark" if args.spark else "Pandas"
+    print(f"  城市出行数据分析系统 - Flask Web 服务 ({mode_label} 引擎)")
     print("  shine 主题 | ECharts 5.5 | Leaflet 地图 | MySQL 数据源")
     print("=" * 60)
 
     # 预加载数据
-    init_data()
+    init_data(use_spark=args.spark)
 
     # 显示访问地址
     lan_ips = _get_lan_ip()
-    print(f"\n  📡 访问地址:")
-    print(f"  ├─ 本机访问: http://localhost:{FLASK_PORT}")
-    print(f"  ├─ 分析看板: http://localhost:{FLASK_PORT}/")
-    print(f"  └─ 实时大屏: http://localhost:{FLASK_PORT}/realtime")
+    print(f"\n  [Access] 访问地址:")
+    print(f"  |-- 本机访问: http://localhost:{FLASK_PORT}")
+    print(f"  |-- 分析看板: http://localhost:{FLASK_PORT}/")
+    print(f"  |-- 实时大屏: http://localhost:{FLASK_PORT}/realtime")
     if lan_ips:
-        print(f"\n  🌐 局域网访问 (同局域网设备):")
+        print(f"\n  [LAN] 局域网访问 (同局域网设备):")
         for ip in lan_ips:
-            print(f"  ├─ http://{ip}:{FLASK_PORT}/        (分析看板)")
-            print(f"  └─ http://{ip}:{FLASK_PORT}/realtime (实时大屏)")
+            print(f"  |-- http://{ip}:{FLASK_PORT}/        (分析看板)")
+            print(f"  |-- http://{ip}:{FLASK_PORT}/realtime (实时大屏)")
     else:
-        print(f"\n  ⚠️  未检测到局域网IP，仅限本机访问")
+        print(f"\n  [WARN] 未检测到局域网IP，仅限本机访问")
+    print()
+
+    # 启动时尝试测试 MySQL 连接 (非阻塞)
+    try:
+        conn = _get_mysql_conn()
+        conn.close()
+        print("  [OK] MySQL 连接正常 (192.168.116.128:3306)")
+    except Exception as e:
+        print(f"  [WARN] MySQL 连接失败: {e}")
+        print("       实时大屏的 MySQL 数据源将不可用，但分析看板正常")
     print()
 
     app.run(

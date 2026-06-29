@@ -130,7 +130,37 @@ MYSQL_CONFIG = {
 # ============================================================
 # PySpark配置 (用于大规模数据处理)
 # ============================================================
+
+# Spark运行模式: "remote" (VM集群), "local" (本机), "auto" (自动检测)
+SPARK_MODE = "auto"
+
+# VM Spark 集群地址
+SPARK_MASTER_REMOTE = "spark://192.168.116.128:7077"
+SPARK_MASTER_LOCAL = "local[*]"
+
 SPARK_CONFIG = {
     "app_name": "TaxiTripAnalysis",
-    "master": "local[*]",
+    "master": SPARK_MASTER_LOCAL,  # 默认值，运行时根据 SPARK_MODE 动态切换
+    # Spark executor/driver 配置
+    "spark.executor.memory": "2g",
+    "spark.driver.memory": "1g",
+    "spark.sql.shuffle.partitions": "8",
+    "spark.executor.cores": "2",
+    # PySpark ↔ Pandas 互转优化
+    "spark.sql.execution.arrow.pyspark.enabled": "true",
+    # 日志级别
+    "spark.log.level": "WARN",
+}
+
+# ============================================================
+# 数据上传到MySQL的配置
+# ============================================================
+UPLOAD_TO_MYSQL = True  # 是否将分析结果上传到MySQL
+MYSQL_UPLOAD_TABLES = {
+    "od_trips": "清洗后的OD行程数据",
+    "hourly_stats": "24小时出行量统计",
+    "period_stats": "时段统计",
+    "hotspots": "出行热点区域",
+    "vehicle_efficiency": "车辆运营效率",
+    "net_flow": "净流入流出分析",
 }

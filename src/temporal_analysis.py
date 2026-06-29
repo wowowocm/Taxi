@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-时序分析模块
+时序分析模块 (支持 Pandas + PySpark 双模式)
 功能:
   1. 小时级出行量分布统计
   2. 出行高峰自动识别
@@ -15,26 +15,38 @@ from .config import TIME_PERIODS, HOUR_LABELS
 
 
 class TemporalAnalyzer:
-    """时序分析器"""
+    """时序分析器 (Pandas + PySpark 双模式)"""
 
-    def __init__(self, df: pd.DataFrame = None):
+    def __init__(self, df: pd.DataFrame = None, use_spark: bool = False):
         """
         Parameters
         ----------
         df : pd.DataFrame
-            清洗后的OD数据 (含 VehicleNum, Stime, SLng, SLat, ELng, ELat, Etime)
+            清洗后的 OD 数据 (含 VehicleNum, Stime, SLng, SLat, ELng, ELat, Etime)
+        use_spark : bool
+            是否使用 PySpark 进行分析
         """
         self.df = df.copy() if df is not None else None
-        self.hourly_stats = None   # 小时级统计
-        self.peak_info = None      # 高峰识别结果
-        self._preprocessed = False # 预处理标记
+        self.hourly_stats = None
+        self.peak_info = None
+        self._preprocessed = False
+        self.use_spark = use_spark
+        self.spark = None  # 延迟初始化
 
-        # 自动执行预处理
         if self.df is not None:
             self._preprocess()
 
+    def _get_spark(self):
+        """延迟初始化 Spark 会话"""
+        if self.spark is None and self.use_spark:
+            from .spark_manager import get_spark
+            self.spark = get_spark()
+            if self.spark is None:
+                self.use_spark = False
+        return self.spark
+
     def load_data(self, df: pd.DataFrame):
-        """加载OD数据并自动预处理"""
+        """加载 OD 数据并自动预处理"""
         self.df = df.copy()
         self._preprocessed = False
         self.hourly_stats = None
@@ -42,34 +54,25 @@ class TemporalAnalyzer:
         self._preprocess()
 
     def _preprocess(self):
-        """
-        数据预处理：添加时间相关字段、计算行程时长和距离
-
-        幂等性: 如果已经预处理过，跳过重复计算
-        """
+        """数据预处理：添加时间相关字段"""
         if self.df is None:
             raise ValueError("请先加载数据")
         if self._preprocessed:
-            return  # 幂等性检查: 避免重复计算
+            return
 
-        # 解析时间
         self.df["stime_dt"] = pd.to_datetime(self.df["Stime"], format="%H:%M:%S")
         self.df["etime_dt"] = pd.to_datetime(self.df["Etime"], format="%H:%M:%S")
 
-        # 处理跨日
         mask = self.df["etime_dt"] < self.df["stime_dt"]
         self.df.loc[mask, "etime_dt"] += pd.Timedelta(days=1)
 
-        # 提取小时
         self.df["hour"] = self.df["stime_dt"].dt.hour
 
-        # 计算行程时长（分钟）— 如果清洗阶段已计算则跳过
         if "duration_min" not in self.df.columns:
             self.df["duration_min"] = (
                 (self.df["etime_dt"] - self.df["stime_dt"]).dt.total_seconds() / 60
             )
 
-        # 计算行程距离（公里）— 如果清洗阶段已计算则跳过
         if "distance_km" not in self.df.columns:
             self.df["distance_km"] = self._approx_distance(
                 self.df["SLng"], self.df["SLat"],
@@ -81,6 +84,7 @@ class TemporalAnalyzer:
     # ----------------------------------------------------------
     # 小时出行量分布
     # ----------------------------------------------------------
+
     def hourly_trip_count(self) -> pd.DataFrame:
         """
         按小时统计出行量分布
@@ -88,10 +92,13 @@ class TemporalAnalyzer:
         Returns
         -------
         pd.DataFrame
-            含 hour, trip_count, avg_duration, avg_distance 列
+            含 hour, trip_count, avg_duration, avg_distance 等列
         """
         if self.df is None:
             raise ValueError("请先加载数据")
+
+        if self.use_spark and self._get_spark() is not None:
+            return self._spark_hourly_trip_count()
 
         grouped = self.df.groupby("hour").agg(
             trip_count=("VehicleNum", "count"),
@@ -101,39 +108,46 @@ class TemporalAnalyzer:
             unique_vehicles=("VehicleNum", "nunique"),
         ).reset_index()
 
-        # 补充缺失的小时（填充0）
         all_hours = pd.DataFrame({"hour": range(24)})
         grouped = all_hours.merge(grouped, on="hour", how="left").fillna(0)
+        self.hourly_stats = grouped
+        return grouped
 
+    def _spark_hourly_trip_count(self) -> pd.DataFrame:
+        """PySpark 版本: 按小时统计"""
+        from pyspark.sql import functions as F
+
+        spark = self.spark
+        sdf = spark.createDataFrame(self.df)
+
+        grouped = sdf.groupBy("hour").agg(
+            F.count("VehicleNum").alias("trip_count"),
+            F.mean("duration_min").alias("avg_duration"),
+            F.expr("percentile_approx(duration_min, 0.5)").alias("median_duration"),
+            F.mean("distance_km").alias("avg_distance"),
+            F.countDistinct("VehicleNum").alias("unique_vehicles"),
+        ).toPandas()
+
+        all_hours = pd.DataFrame({"hour": range(24)})
+        grouped = all_hours.merge(grouped, on="hour", how="left").fillna(0)
         self.hourly_stats = grouped
         return grouped
 
     # ----------------------------------------------------------
     # 高峰识别
     # ----------------------------------------------------------
+
     def identify_peak_hours(self) -> dict:
-        """
-        自动识别出行高峰时段
-
-        算法:
-          出行量 > 日均小时均值的 1.5 倍 判定为高峰小时
-
-        Returns
-        -------
-        dict
-            含 morning_peak, evening_peak, peak_hours 等字段
-        """
+        """自动识别出行高峰时段 (出行量 > 日均1.5倍)"""
         if self.hourly_stats is None:
             self.hourly_trip_count()
 
         mean_hourly = self.hourly_stats["trip_count"].mean()
         threshold = mean_hourly * 1.5
 
-        # 找出所有高峰小时
         peak_mask = self.hourly_stats["trip_count"] > threshold
         peak_hours = self.hourly_stats.loc[peak_mask, "hour"].tolist()
 
-        # 识别连续高峰时段
         morning_peak = [h for h in peak_hours if 6 <= h <= 10]
         evening_peak = [h for h in peak_hours if 16 <= h <= 20]
 
@@ -149,7 +163,6 @@ class TemporalAnalyzer:
             "peak_max_trips": int(self.hourly_stats["trip_count"].max()),
         }
 
-        # 打印高峰信息
         print("\n--- 出行高峰识别 ---")
         print(f"  日均小时出行量: {mean_hourly:.0f}")
         print(f"  高峰阈值 (1.5x): {threshold:.0f}")
@@ -165,15 +178,9 @@ class TemporalAnalyzer:
     # ----------------------------------------------------------
     # 时段分析
     # ----------------------------------------------------------
-    def period_analysis(self) -> pd.DataFrame:
-        """
-        按时段（早高峰/日间平峰/晚高峰/夜间）统计出行特征
 
-        Returns
-        -------
-        pd.DataFrame
-            各时段统计汇总
-        """
+    def period_analysis(self) -> pd.DataFrame:
+        """按时段统计出行特征"""
         if self.df is None:
             raise ValueError("请先加载数据")
 
@@ -192,21 +199,14 @@ class TemporalAnalyzer:
                 "活跃车辆数": period_df["VehicleNum"].nunique(),
             })
 
-        period_stats = pd.DataFrame(results)
-        return period_stats
+        return pd.DataFrame(results)
 
     # ----------------------------------------------------------
     # 行程时长/距离分布
     # ----------------------------------------------------------
-    def duration_distribution(self) -> dict:
-        """
-        行程时长分布统计
 
-        Returns
-        -------
-        dict
-            统计指标: mean, median, std, skewness, kurtosis, percentiles
-        """
+    def duration_distribution(self) -> dict:
+        """行程时长分布统计"""
         if self.df is None:
             raise ValueError("请先加载数据")
 
@@ -245,14 +245,7 @@ class TemporalAnalyzer:
         return stats
 
     def distance_distribution(self) -> dict:
-        """
-        行程距离分布统计
-
-        Returns
-        -------
-        dict
-            统计指标
-        """
+        """行程距离分布统计"""
         if self.df is None:
             raise ValueError("请先加载数据")
 
@@ -262,8 +255,8 @@ class TemporalAnalyzer:
             "mean": dist.mean(),
             "median": dist.median(),
             "std": dist.std(),
-            "short_trip_ratio": (dist < 3).mean() * 100,       # <3km 短途
-            "long_trip_ratio": (dist > 10).mean() * 100,        # >10km 长途
+            "short_trip_ratio": (dist < 3).mean() * 100,
+            "long_trip_ratio": (dist > 10).mean() * 100,
             "percentiles": {
                 "25%": dist.quantile(0.25),
                 "50%": dist.quantile(0.50),
@@ -284,17 +277,14 @@ class TemporalAnalyzer:
     # ----------------------------------------------------------
     # 车辆运营效率
     # ----------------------------------------------------------
-    def vehicle_efficiency(self) -> pd.DataFrame:
-        """
-        计算每辆车的运营效率指标
 
-        Returns
-        -------
-        pd.DataFrame
-            含 VehicleNum, trip_count, total_duration, total_distance, avg_duration
-        """
+    def vehicle_efficiency(self) -> pd.DataFrame:
+        """计算每辆车的运营效率指标"""
         if self.df is None:
             raise ValueError("请先加载数据")
+
+        if self.use_spark and self._get_spark() is not None:
+            return self._spark_vehicle_efficiency()
 
         efficiency = self.df.groupby("VehicleNum").agg(
             trip_count=("duration_min", "count"),
@@ -306,7 +296,6 @@ class TemporalAnalyzer:
             last_trip=("Etime", "max"),
         ).reset_index()
 
-        # 按载客次数排序
         efficiency = efficiency.sort_values("trip_count", ascending=False)
 
         print("\n--- 车辆运营效率 Top-10 ---")
@@ -314,15 +303,35 @@ class TemporalAnalyzer:
 
         return efficiency
 
+    def _spark_vehicle_efficiency(self) -> pd.DataFrame:
+        """PySpark 版本: 车辆运营效率"""
+        from pyspark.sql import functions as F
+
+        spark = self.spark
+        sdf = spark.createDataFrame(self.df)
+
+        efficiency = sdf.groupBy("VehicleNum").agg(
+            F.count("duration_min").alias("trip_count"),
+            F.sum("duration_min").alias("total_duration"),
+            F.sum("distance_km").alias("total_distance"),
+            F.mean("duration_min").alias("avg_duration"),
+            F.mean("distance_km").alias("avg_distance"),
+            F.min("Stime").alias("first_trip"),
+            F.max("Etime").alias("last_trip"),
+        ).orderBy(F.desc("trip_count")).toPandas()
+
+        print("\n--- 车辆运营效率 Top-10 (PySpark) ---")
+        print(efficiency.head(10).to_string(index=False))
+
+        return efficiency
+
     # ----------------------------------------------------------
     # 辅助方法
     # ----------------------------------------------------------
+
     @staticmethod
     def _approx_distance(lng1, lat1, lng2, lat2):
-        """
-        简化的距离计算（适用于小范围）
-        使用等矩形近似，在纬度22-23°附近误差<1%
-        """
+        """简化的距离计算（等矩形近似）"""
         R = 6371.0
         lat_mid = np.radians((lat1 + lat2) / 2)
         dx = (lng2 - lng1) * np.cos(lat_mid) * (np.pi / 180) * R
