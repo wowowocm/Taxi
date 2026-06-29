@@ -2,42 +2,49 @@
  * 深圳地图 OD 出行流向图
  * 数据源: /api/od-flows
  *
- * 参考 project_info/rule.md 地理坐标图 —
- *   echarts.registerMap('shenzhen', geoJSON)
- *   + geo { map: 'shenzhen' }
- *   + graph { coordinateSystem: 'geo' }
- *
- * 深圳 GeoJSON 来源:
- *   DataV GeoAtlas — https://geo.datav.aliyun.com/areas_v3/bound/440300_full.json
- *   （行政编码 440300 = 深圳市）
+ * ECharts geo + graph 系列, 本地 GeoJSON 优先, CDN 回退
+ * 不使用 shine 主题 (暗色背景与地图亮色配色冲突)
  */
 (function() {
     'use strict';
 
-    var SZ_GEO_URL = 'https://geo.datav.aliyun.com/areas_v3/bound/440300_full.json';
-    var MAP_NAME = 'shenzhen';
-    var _jsonReady = false;
-    var _pendingData = null;  // GeoJSON 加载完成前缓存数据
-
-    /**
-     * 深圳纬度 ≈ 22.55°
-     * Mercator 投影 aspectScale = cos(lat)
-     */
+    // 深圳 GeoJSON — 本地优先，CDN 回退
+    var SZ_GEO_LOCAL = '/static/geo/shenzhen.json';
+    var SZ_GEO_CDN   = 'https://geo.datav.aliyun.com/areas_v3/bound/440300_full.json';
+    var MAP_NAME     = 'shenzhen';
     var SZ_ROUGH_LAT = 22.55;
+
+    var _jsonReady   = false;
+    var _loading     = false;
+    var _pendingData = null;   // GeoJSON 加载完成前缓存的数据
+    var _loadError   = null;   // 加载错误信息
+
+    // --------------- 入口 ---------------
 
     function render(domId, data) {
         var dom = document.getElementById(domId);
-        if (!dom) { console.warn('[Geo-OD] DOM不存在:', domId); return; }
-
-        if (!data || !data.nodes || !data.nodes.length) {
-            dom.innerHTML = '<div class="error-state">深圳OD流向图 — 无数据</div>';
+        if (!dom) {
+            console.warn('[OD-Flow] DOM 不存在:', domId);
             return;
         }
 
-        // 如果 GeoJSON 还未加载，缓存数据等待加载完成后重试
+        if (!data || !data.nodes || !data.nodes.length) {
+            _showMessage(dom, 'error', '深圳OD流向图 — 无数据');
+            console.warn('[OD-Flow] 数据为空');
+
+            // 写入本地日志
+            if (window.__odFlowLog) {
+                window.__odFlowLog.push({ time: new Date().toISOString(), type: 'no-data', detail: JSON.stringify(data) });
+            }
+            return;
+        }
+
+        console.log('[OD-Flow] 收到数据: nodes=' + data.nodes.length + ', edges=' + data.edges.length);
+
+        // GeoJSON 还没加载好 → 缓存数据, 先加载地图
         if (!_jsonReady) {
             _pendingData = { domId: domId, data: data };
-            dom.innerHTML = '<div class="loading">正在加载深圳地图…</div>';
+            _showMessage(dom, 'loading', '正在加载深圳地图 GeoJSON…');
             _loadGeoJSON();
             return;
         }
@@ -45,61 +52,126 @@
         _doRender(domId, data);
     }
 
-    function _loadGeoJSON() {
-        // 防重复加载
-        if (_jsonReady) return;
-        if (window._sz_geo_loading) return;
-        window._sz_geo_loading = true;
+    // --------------- GeoJSON 加载 ---------------
 
-        var xhr = new XMLHttpRequest();
-        xhr.open('GET', SZ_GEO_URL, true);
-        xhr.onload = function() {
-            if (xhr.status === 200) {
-                try {
-                    var geoJSON = JSON.parse(xhr.responseText);
-                    echarts.registerMap(MAP_NAME, geoJSON);
-                    _jsonReady = true;
-                    console.log('[Geo-OD] 深圳地图 GeoJSON 加载成功');
-                    // 渲染等待中的数据
-                    if (_pendingData) {
-                        _doRender(_pendingData.domId, _pendingData.data);
-                        _pendingData = null;
-                    }
-                } catch (e) {
-                    console.error('[Geo-OD] GeoJSON 解析失败:', e);
-                }
-            } else {
-                console.error('[Geo-OD] GeoJSON 请求失败: HTTP', xhr.status);
+    function _loadGeoJSON() {
+        if (_jsonReady) return;
+        if (_loading) return;
+        _loading = true;
+        _loadError = null;
+
+        console.log('[OD-Flow] 开始加载深圳 GeoJSON (本地优先)…');
+
+        // 先尝试本地文件
+        _tryLoad(SZ_GEO_LOCAL, function onLocalOK(geoJSON) {
+            console.log('[OD-Flow] 深圳 GeoJSON 加载成功 (本地)');
+            _onGeoReady(geoJSON);
+        }, function onLocalFail(err) {
+            console.warn('[OD-Flow] 本地 GeoJSON 不可用, 尝试 CDN…', err);
+            // 本地失败 → CDN 回退
+            _tryLoad(SZ_GEO_CDN, function onCDNOK(geoJSON) {
+                console.log('[OD-Flow] 深圳 GeoJSON 加载成功 (CDN)');
+                _onGeoReady(geoJSON);
+            }, function onCDNFail(err2) {
+                console.error('[OD-Flow] GeoJSON 加载失败 (本地+CDN 均不可用)', err2);
+                _loadError = '深圳地图加载失败: 本地和CDN均不可用';
+                _loading = false;
+
+                // 给等待中的 DOM 显示错误
                 if (_pendingData) {
                     var dom = document.getElementById(_pendingData.domId);
-                    if (dom) dom.innerHTML = '<div class="error-state">深圳地图加载失败 (HTTP ' + xhr.status + ')</div>';
+                    _showMessage(dom, 'error', _loadError);
                 }
+            });
+        });
+    }
+
+    function _tryLoad(url, onSuccess, onError) {
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', url, true);
+        xhr.timeout = 15000;
+
+        xhr.onload = function() {
+            if (xhr.status === 200 || xhr.status === 304) {
+                try {
+                    var geoJSON = JSON.parse(xhr.responseText);
+                    if (geoJSON && geoJSON.type === 'FeatureCollection') {
+                        onSuccess(geoJSON);
+                    } else {
+                        onError('Invalid GeoJSON: type=' + (geoJSON && geoJSON.type));
+                    }
+                } catch (e) {
+                    onError('JSON parse error: ' + e.message);
+                }
+            } else {
+                onError('HTTP ' + xhr.status);
             }
-            window._sz_geo_loading = false;
         };
+
+        xhr.ontimeout = function() {
+            onError('Timeout (15s)');
+        };
+
         xhr.onerror = function() {
-            console.error('[Geo-OD] GeoJSON 网络错误');
-            window._sz_geo_loading = false;
+            onError('Network error');
         };
+
         xhr.send();
     }
 
+    function _onGeoReady(geoJSON) {
+        echarts.registerMap(MAP_NAME, geoJSON);
+        _jsonReady = true;
+        _loading = false;
+
+        // 渲染等待中的数据
+        if (_pendingData) {
+            var pd = _pendingData;
+            _pendingData = null;
+            _doRender(pd.domId, pd.data);
+        }
+    }
+
+    // --------------- ECharts 渲染 ---------------
+
     function _doRender(domId, data) {
         var dom = document.getElementById(domId);
-        var inst = window.ChartManager.init(domId);
-        if (!inst) {
-            dom.innerHTML = '<div class="error-state">深圳OD流向图 — 初始化失败</div>';
+        if (!dom) { console.warn('[OD-Flow] DOM 消失:', domId); return; }
+
+        // ★ 不使用 shine 暗色主题, 否则浅色地图不可见
+        var instance;
+        try {
+            // 先销毁可能存在的旧实例 (如果之前用 shine 初始化过)
+            if (window.ChartManager && window.ChartManager.instances && window.ChartManager.instances[domId]) {
+                window.ChartManager.instances[domId].dispose();
+                delete window.ChartManager.instances[domId];
+            }
+            instance = echarts.init(dom);
+        } catch (e) {
+            console.error('[OD-Flow] ECharts 初始化失败:', e);
+            _showMessage(dom, 'error', '图表引擎初始化失败: ' + e.message);
             return;
         }
 
+        if (!instance) {
+            _showMessage(dom, 'error', '图表初始化失败 (null instance)');
+            return;
+        }
+
+        // 注册到 ChartManager (以便 resize)
+        if (window.ChartManager && window.ChartManager.instances) {
+            window.ChartManager.instances[domId] = instance;
+        }
+
         try {
-            inst.setOption({
+            instance.setOption({
                 title: {
                     text: '深圳市出租车 OD 出行流向',
-                    subtext: 'Top-30 OD对 | 箭头表示行驶方向',
+                    subtext: 'Top-30 OD对 | 箭头表示行驶方向 | 深圳市区行政区划',
                     left: 'center',
-                    top: 10,
-                    textStyle: { color: '#333', fontSize: 16 }
+                    top: 8,
+                    textStyle: { color: '#333', fontSize: 15 },
+                    subtextStyle: { color: '#888', fontSize: 11 }
                 },
                 tooltip: {
                     trigger: 'item',
@@ -109,27 +181,29 @@
                                  + '&darr;<br/>'
                                  + '<b>' + p.data.target + '</b>';
                         }
-                        return '<b>' + p.name + '</b><br/>'
-                             + '坐标: [' + (p.value || [0,0])[0].toFixed(4)
-                             + ', ' + (p.value || [0,0])[1].toFixed(4) + ']';
+                        if (p.value && Array.isArray(p.value) && p.value.length >= 2) {
+                            return '<b>' + p.name + '</b><br/>'
+                                 + '坐标: [' + p.value[0].toFixed(5)
+                                 + ', ' + p.value[1].toFixed(5) + ']';
+                        }
+                        return '<b>' + (p.name || '') + '</b>';
                     }
                 },
                 geo: {
                     map: MAP_NAME,
                     roam: true,
                     aspectScale: Math.cos((SZ_ROUGH_LAT * Math.PI) / 180),
-                    label: {
-                        show: false
-                    },
+                    zoom: 1.1,
+                    center: [114.05, 22.60],
+                    label: { show: false },
                     itemStyle: {
-                        areaColor: '#f3f4f6',
-                        borderColor: '#999',
+                        areaColor: '#f5f5f5',
+                        borderColor: '#bbb',
                         borderWidth: 1
                     },
                     emphasis: {
-                        itemStyle: {
-                            areaColor: '#e8eaf6'
-                        }
+                        disabled: true,
+                        itemStyle: { areaColor: '#e0e0e0' }
                     }
                 },
                 series: [{
@@ -137,50 +211,58 @@
                     coordinateSystem: 'geo',
                     data: data.nodes,
                     edges: data.edges,
+                    roam: true,
                     edgeSymbol: ['none', 'arrow'],
-                    edgeSymbolSize: 8,
+                    edgeSymbolSize: [0, 8],
                     symbol: 'circle',
-                    symbolSize: 8,
+                    symbolSize: 7,
                     itemStyle: {
-                        color: '#1a237e',
+                        color: '#e65100',
                         borderColor: '#fff',
-                        borderWidth: 1
+                        borderWidth: 1.5
                     },
                     label: {
                         show: true,
-                        fontSize: 8,
-                        color: '#333',
+                        fontSize: 7,
+                        color: '#555',
                         position: 'top',
+                        distance: 3,
                         formatter: function(p) {
-                            return p.name.length > 18
-                                ? p.name.substring(0, 16) + '…'
+                            return p.name.length > 20
+                                ? p.name.substring(0, 18) + '…'
                                 : p.name;
                         }
                     },
                     lineStyle: {
-                        color: '#1a237e',
-                        opacity: 0.6,
-                        curveness: 0.15
+                        color: '#1565c0',
+                        opacity: 0.55,
+                        curveness: 0.2,
+                        width: 1.5
                     },
                     emphasis: {
                         focus: 'adjacency',
-                        lineStyle: {
-                            width: 3,
-                            opacity: 0.9
-                        },
-                        itemStyle: {
-                            color: '#c12e34',
-                            borderWidth: 2
-                        }
+                        lineStyle: { width: 3, opacity: 0.9 },
+                        itemStyle: { color: '#c62828', borderWidth: 2.5 }
                     }
                 }]
             });
+
+            console.log('[OD-Flow] 渲染成功: ' + data.nodes.length + ' nodes, ' + data.edges.length + ' edges');
+
         } catch (e) {
-            console.error('[Geo-OD] 渲染失败:', e.message);
-            dom.innerHTML = '<div class="error-state">深圳OD流向图 渲染失败: '
-                          + e.message.replace(/</g, '&lt;') + '</div>';
+            console.error('[OD-Flow] setOption 失败:', e.message, e.stack);
+            _showMessage(dom, 'error', 'OD流向图渲染失败: ' + e.message.replace(/</g, '&lt;'));
         }
     }
 
+    // --------------- 辅助 ---------------
+
+    function _showMessage(dom, type, msg) {
+        if (!dom) return;
+        var cls = (type === 'error') ? 'error-state' : 'loading';
+        dom.innerHTML = '<div class="' + cls + '">' + msg + '</div>';
+    }
+
+    // 暴露到全局
     window.ODLinesChart = { render: render };
 })();

@@ -14,6 +14,11 @@
         <p>基于GPS轨迹数据的城市出行规律挖掘 | 500辆出租车 × 全天候轨迹</p>
     </div>
 
+    <nav class="nav-tabs">
+        <a href="/"         class="nav-tab {% if request.path == '/' %}active{% endif %}">📊 分析看板</a>
+        <a href="/realtime" class="nav-tab {% if request.path == '/realtime' %}active{% endif %}">🖥 实时大屏</a>
+    </nav>
+
     {% block content %}{% endblock %}
 
     <div class="footer">

@@ -226,59 +226,67 @@ def _get_od_flow_data():
       edges: [{source: name, target: name}, ...]  # graph edges 格式
     """
     sa = spatial_analyzer
-    if sa.grid_od_matrix is None:
-        sa.build_od_matrix()
+    try:
+        if sa.grid_od_matrix is None:
+            sa.build_od_matrix()
 
-    top_pairs = sa.top_od_pairs(30)
+        top_pairs = sa.top_od_pairs(30)
 
-    # 收集原始 OD 对
-    node_coords = {}
-    raw_pairs = []
-    for _, row in top_pairs.iterrows():
-        o_lng, o_lat = round(float(row["O_lng"]), 5), round(float(row["O_lat"]), 5)
-        d_lng, d_lat = round(float(row["D_lng"]), 5), round(float(row["D_lat"]), 5)
-        o_name = f"({o_lng},{o_lat})"
-        d_name = f"({d_lng},{d_lat})"
-        node_coords[o_name] = [o_lng, o_lat]
-        node_coords[d_name] = [d_lng, d_lat]
-        raw_pairs.append({
-            "source": o_name,
-            "target": d_name,
-            "value": int(row["flow"]),
-        })
+        # 收集原始 OD 对
+        node_coords = {}
+        raw_pairs = []
+        for _, row in top_pairs.iterrows():
+            o_lng, o_lat = round(float(row["O_lng"]), 5), round(float(row["O_lat"]), 5)
+            d_lng, d_lat = round(float(row["D_lng"]), 5), round(float(row["D_lat"]), 5)
+            o_name = f"({o_lng},{o_lat})"
+            d_name = f"({d_lng},{d_lat})"
+            node_coords[o_name] = [o_lng, o_lat]
+            node_coords[d_name] = [d_lng, d_lat]
+            raw_pairs.append({
+                "source": o_name,
+                "target": d_name,
+                "value": int(row["flow"]),
+            })
 
-    # 合并双向流 (A→B vs B→A)，保留净值方向
-    pair_map = {}
-    for p in raw_pairs:
-        key = (p["source"], p["target"])
-        rev_key = (p["target"], p["source"])
-        if rev_key in pair_map:
-            rev = pair_map.pop(rev_key)
-            net = p["value"] - rev["value"]
-            if net > 0:
-                pair_map[key] = {"source": p["source"], "target": p["target"], "value": net}
-            elif net < 0:
-                pair_map[rev_key] = {"source": rev["source"], "target": rev["target"], "value": -net}
-        else:
-            pair_map[key] = p
+        # 合并双向流 (A→B vs B→A)，保留净值方向
+        pair_map = {}
+        for p in raw_pairs:
+            key = (p["source"], p["target"])
+            rev_key = (p["target"], p["source"])
+            if rev_key in pair_map:
+                rev = pair_map.pop(rev_key)
+                net = p["value"] - rev["value"]
+                if net > 0:
+                    pair_map[key] = {"source": p["source"], "target": p["target"], "value": net}
+                elif net < 0:
+                    pair_map[rev_key] = {"source": rev["source"], "target": rev["target"], "value": -net}
+            else:
+                pair_map[key] = p
 
-    clean_pairs = list(pair_map.values())
+        clean_pairs = list(pair_map.values())
 
-    # 构建节点列表 — graph series data 格式: {name, value: [lng, lat]}
-    used = set()
-    for p in clean_pairs:
-        used.add(p["source"])
-        used.add(p["target"])
+        # 构建节点列表 — graph series data 格式: {name, value: [lng, lat]}
+        used = set()
+        for p in clean_pairs:
+            used.add(p["source"])
+            used.add(p["target"])
 
-    nodes = [{"name": n, "value": node_coords[n]} for n in sorted(used)]
+        nodes = [{"name": n, "value": node_coords[n]} for n in sorted(used)]
 
-    # 构建边列表 — graph series edges 格式: {source: name, target: name}
-    edges = [{"source": p["source"], "target": p["target"]} for p in clean_pairs]
+        # 构建边列表 — graph series edges 格式: {source: name, target: name}
+        edges = [{"source": p["source"], "target": p["target"]} for p in clean_pairs]
 
-    return {
-        "nodes": nodes,
-        "edges": edges,
-    }
+        log.info(f"OD流向图数据: {len(nodes)} 节点, {len(edges)} 边 (来自 {len(top_pairs)} 个OD对)")
+
+        return {
+            "nodes": nodes,
+            "edges": edges,
+        }
+    except Exception as e:
+        log.error(f"OD流向图数据处理失败: {e}")
+        import traceback
+        log.error(traceback.format_exc())
+        return {"nodes": [], "edges": [], "error": str(e)}
 
 
 def _get_net_flow_data():
@@ -362,7 +370,15 @@ def api_vehicles():
 
 @app.route("/api/od-flows")
 def api_od_flows():
-    return jsonify(_get_od_flow_data())
+    try:
+        data = _get_od_flow_data()
+        log.info(f"OD流向图API: nodes={len(data.get('nodes',[]))}, edges={len(data.get('edges',[]))}")
+        return jsonify(data)
+    except Exception as e:
+        log.error(f"OD流向图API 失败: {e}")
+        import traceback
+        log.error(traceback.format_exc())
+        return jsonify({"nodes": [], "edges": [], "error": str(e)}), 500
 
 
 @app.route("/api/net-flow")
